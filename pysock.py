@@ -1,6 +1,5 @@
 import socket
 import selectors
-import bencodepy
 from bcoding import bencode, bdecode
 
 def main():
