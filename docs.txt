@@ -6,4 +6,4 @@ Make sure successful with:
 python3 --version
 
 Can run python files via:
-~/pytest/v/bin/python NAME.py
+~/cmsc417-BitTorrent/v/bin/python NAME.py
