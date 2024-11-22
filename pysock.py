@@ -3,8 +3,9 @@ import selectors
 from bcoding import bencode, bdecode
 
 def main():
-    torfile = open("lots-of-numbers.torrent", 'rb')
+    torfile = open("tor-file-examples/cosmos-laundromat.torrent", 'rb')
     tde = bdecode(torfile)
+    print(tde)
     
     
 
