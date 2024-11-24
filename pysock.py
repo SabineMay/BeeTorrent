@@ -5,7 +5,10 @@ from bcoding import bencode, bdecode
 def main():
     torfile = open("tor-file-examples/cosmos-laundromat.torrent", 'rb')
     tde = bdecode(torfile)
-    print(tde)
+    addrstr = tde['announce']
+    addrsep = addrstr.split(':')
+    ip_addr = addrsep[0] + addrsep[1]
+    port = addrsep[2]
     
     
 
