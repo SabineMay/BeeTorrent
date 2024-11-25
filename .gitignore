@@ -14,3 +14,6 @@
 !.vscode/extensions.json
 !.vscode/*.code-snippets
 .history
+
+# personal python venvs
+sabine-env/
