@@ -9,7 +9,7 @@ def main():
     addrsep = addrstr.split(':')
     ip_addr = addrsep[0] + addrsep[1]
     port = addrsep[2]
-    # print("test") # ensure main() is actually running when you execute ~/cmsc417-BitTorrent/venv/bin/python3 {FILENAME}.py
+    print(port) # ensure main() is actually running when you execute ~/cmsc417-BitTorrent/venv/bin/python3 {FILENAME}.py
     
 
 if __name__=="__main__":
