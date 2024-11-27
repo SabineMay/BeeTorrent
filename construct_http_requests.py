@@ -25,3 +25,23 @@ def construct_GET_request(host_domain, host_port, path):
     request += HTTP_LINE_END
 
     return request.encode()
+
+def create_path(base_path, params):
+    path = base_path
+
+    first_param = True
+
+    for param in params:
+        param_value = params[param]
+
+        if first_param:
+            path += "?"
+            first_param = False
+        else:
+            path += "&"
+        
+        path += param
+        path += "="
+        path += param_value
+    
+    return path
