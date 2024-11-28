@@ -9,6 +9,9 @@ def construct_GET_request(host_domain, host_port, path):
 
     host_line = "Host: " + host_domain + ":" + str(host_port) + HTTP_LINE_END
     request += host_line
+    
+    connection_line = "Connection: Keep-Alive" + HTTP_LINE_END
+    request += connection_line
 
     user_agent_line = "User-Agent: " + USER_AGENT + HTTP_LINE_END
     request += user_agent_line
@@ -18,9 +21,6 @@ def construct_GET_request(host_domain, host_port, path):
 
     accept_encoding_line = "Accept-Encoding: identity" + HTTP_LINE_END
     request += accept_encoding_line
-
-    connection_line = "Connection: Keep-Alive" + HTTP_LINE_END
-    request += connection_line
 
     request += HTTP_LINE_END
 
@@ -42,6 +42,6 @@ def create_path(base_path, params):
         
         path += param
         path += "="
-        path += param_value
+        path += str(param_value)
     
     return path
