@@ -2,11 +2,10 @@ import time
 
 class Bee: # part of the swarm
     def __init__(self):
-        self.peerid = -1
-        self.remote_addr = (-1, -1)
+        self.peerid = None
+        self.remote_addr = (None, None)
         self.clock = time.monotonic()
-        self.client_sock = -1
-        self.server_sock = -1
+        self.sock = None
     
     def __eq__(self, other):
         if (self.remote_addr == other.remote_addr): # potential issue: is this the correct way to check for tuple equality

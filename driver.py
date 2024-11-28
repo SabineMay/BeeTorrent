@@ -7,21 +7,25 @@ import time
 from bcoding import bencode, bdecode
 
 def main():
-    sel = selectors.DefaultSelector() # only holds listen_sock and bee.server_sock's
+    sel = selectors.DefaultSelector() # only holds listen_sock, bee.server_sock's, and tracker_sock
     
     ip = "127.0.0.1" # get visible IP of this machine
     port = 1025 # port = int(sys.argv[2]) # user-set port on which to accept peer connections
     
     listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listen_sock.bind((ip, port))
-    listen_sock.listen(10) # listen to a max of 10 queued connections, non blocking
+    listen_sock.listen(5) # listen to a max of 5 queued connections, non blocking
     
     sel.register(listen_sock, selectors.EVENT_READ)
     
-    # tracker_sock, tracker_addr = listen_sock.accept()
+    # tracker_addr = from bencoded dict
     # print("Tracker located at " + tracker_addr[0] + ":" + tracker_addr[1]\n)
+    # tracker_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # tracker_sock.connect(tracker_addr)
+    
     # tracker_sock.send(HTTP get request) # send request to tracker with info about the socket we're listening on 
     # bdata = tracker_sock.recv() # receive bencoded tracker response
+    
     metadata = {"interval": 100, "peers":[{"peer id": 5, "ip": "127.0.0.1", "port": 1024}]} # metadata = bdecode(bdata)
     
     if ("failure reason" in metadata): 
@@ -34,48 +38,55 @@ def main():
     for peer in peers:
         newbie = Bee()
         newbie.set_id(peer["peer id"], peer["ip"], peer["port"]) # potential problem: does tracker return ip as a dotted decimal string or an integer?
-        newbie.client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
         try:
+            newbie.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             newbie.client_sock.connect(newbie.addr) 
+            # do handshake
+            # delete peer and close socket if handshake failed
         except: 
-            print("client_sock connection refused\n")
+            print("initial socket connection to peer refused\n")
             
         swarm.append(newbie)
         
-    # all peers start off chocked and us not interested
+    # all peers start off choked and us not interested
     for bee in swarm: 
-        # bee.client_sock.send(choke)
-        # bee.client_sock.send(not interested)
+        # bee.sock.send(choke)
+        # bee.sock.send(not interested)
         print(bee.to_string())
         
     auction_clock = time.monotonic() # 10 seconds should elapse before every non-optimistic choke/unchoke
     charity_clock = time.monotonic() # 30 seconds should elapse before every optimistic unchokex
+    tracker_clock = time.monotonic() # interval seconds should elapse before we update tracker with our status and how much we've downloaded/uploaded
     
     while(True):
-        events = sel.select(timeout = 5) # potential issue: need to adjust timeout based on how much time left on auction and charity clocks
+        events = sel.select(timeout = 5) # potential issue: need to adjust timeout based on how much time left on auction/tracker/charity clocks
         
         for key, mask in events: 
             
-            # getting a message from a peer who we haven't RECEIVED a message from yet (i.e. there isn't a defined server_sock) 
+            # getting a connect() message from a peer
             if (key.fd == listen_sock): 
-                addr, server_sock = key.fd.accept()
+                addr, sock = key.fd.accept()
             
                 curr = None
+                
                 for bee in swarm: 
                     if (bee.remote_addr == addr): # potential problem: is this the right way to check equality of tuples?
+                        print("Peer tried to establish duplicate connection with me")
+                        sock.close()
                         bee.reset_clock()
-                        bee.server_sock = server_sock
                         curr = bee
-                        is_member = True
-                        sel.register(server_sock, selectors.EVENT_READ)
                         break
                     
                 if (curr == None):
-                    print("Got a message from an unregistered peer; need to re-query the tracker\n")
-                else:
-                    pass # handle_msg(curr.client_sock, key.fobject) <-- in another .py module
+                    print("Got a message from an peer that we didn't see in the tracker, attempting to handshake\n")
+                    # do handhsake
+                    # delete peer and close socket if handshake failed
+                    sel.register(sock, selectors.EVENT_READ)
+                    bee.sock = sock
+                    
             
-            # getting a message from a peer who we HAVE received a message from before (i.e. there is a defined server_sock)
+            # getting a message from a peer on an already-established socket
             else: 
                 curr = None
                 for bee in swarm: 
@@ -85,7 +96,7 @@ def main():
                         break
                 
                 if (curr == None):
-                    print("Couldn't find peer assocated with selected server_socket in swarm")
+                    print("Couldn't find peer assocated with selected socket in swarm")
                 
                 else: 
                     pass # handle_msg(curr.client_sock, key.fobject) <-- in another .py module
