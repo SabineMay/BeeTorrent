@@ -11,13 +11,7 @@ class Bee: # part of the swarm
     def set_id(self, _peerid, _remote_ip, _remote_port):
         self.peerid = _peerid 
         self.addr = (_remote_ip, _remote_port)
-
-    def set_client_sock(self, _client_sock):
-        self.client_sock = _client_sock
         
-    def set_server_sock(self, _server_sock):
-        self.server_sock = _server_sock
-    
     def reset_clock(self):
         self.clock = time.monotonic()
 

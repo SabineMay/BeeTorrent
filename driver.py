@@ -2,36 +2,97 @@ import selectors
 import socket 
 import sys
 from Bee import Bee
+import time
+
 from bcoding import bencode, bdecode
 
 def main():
+    sel = selectors.DefaultSelector() # only holds listen_sock and bee.server_sock's
+    
     ip = "127.0.0.1" # get visible IP of this machine
     port = 1025 # port = int(sys.argv[2]) # user-set port on which to accept peer connections
     
     listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listen_sock.bind((ip, port))
-    listen_sock.listen(10) # listen to a max of 10 queued connections
+    listen_sock.listen(10) # listen to a max of 10 queued connections, non blocking
+    
+    sel.register(listen_sock, selectors.EVENT_READ)
     
     # tracker_sock, tracker_addr = listen_sock.accept()
     # print("Tracker located at " + tracker_addr[0] + ":" + tracker_addr[1]\n)
     # tracker_sock.send(HTTP get request) # send request to tracker
     # bdata = tracker_sock.recv() # receive bencoded tracker response
-    metadata = {"peers":[{"peer id": 5, "ip": "127.0.0.1", "port": 1024}]} # metadata = bdecode(bdata)
-    swarm = list()
+    metadata = {"interval": 100, "peers":[{"peer id": 5, "ip": "127.0.0.1", "port": 1024}]} # metadata = bdecode(bdata)
+    
+    if ("failure reason" in metadata): 
+        print("Failed to get metadata from tracker: " + metadata["failure reason"] + "\n")
+        exit()
+    
+    interval = metadata["interval"]
+    peers = metadata["peers"]
+    swarm: list[Bee] = list()
     for peer in metadata["peers"]:
         newbie = Bee()
         newbie.set_id(peer["peer id"], peer["ip"], peer["port"]) # potential problem: does tracker return ip as a dotted decimal string or an integer?
-        newbie.set_client_sock(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+        newbie.client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             newbie.client_sock.connect(newbie.addr) 
         except: 
             print("client_sock connection refused\n")
+            
         swarm.append(newbie)
         
-    # tracker_sock.send(info about me) # send info about myself to tracker
+        
+    # tracker_sock.send(info about me in from of get request keys) # send info about myself to tracker
     for bee in swarm: 
+        # bee.client_sock.send(choke)
+        # bee.client_sock.send(not interested)
         print(bee.to_string())
+        
+    auction_clock = time.monotonic() # 10 seconds should elapse before every non-optimistic choke/unchoke
+    charity_clock = time.monotonic() # 30 seconds should elapse before every optimistic unchokex
+    
+    while(True):
+        events = sel.select(timeout = 5) # potential issue: need to adjust timeout based on how much time left on auction and charity clocks
+        
+        for key, mask in events: 
+            if (key.fd == listen_sock): 
+                addr, server_sock = key.fd.accept()
+            
+                is_member = False
+                for bee in swarm: 
+                    if (bee.addr == addr): 
+                        bee.reset_clock()
+                        bee.server_sock = server_sock
+                        is_member = True
+                        sel.register(server_sock, selectors.EVENT_READ)
+                        break
+                    
+                if (not is_member):
+                    print("Got a message from an unregistered peer; need to re-query the tracker\n")
+            
+            # handle message via another .py module
+            # if message is us getting pieces, going to need a datastructure to keep track of top 4 uploaders for future unchoking
+            # if message is someone else requesting pieces, going to need a datastructure to keep track of current unchoked nodes to which we will respond
+            # this data structure needs to be visible to the auction clock and charity clock logic blocks below
+                
+        for bee in swarm: 
+            if (bee.get_time_elapsed > 120): # 2 minutes since last message
+                sel.unregister(bee.server_sock)
+                swarm.remove(bee)
+                
+        curr_time = time.monotonic()
 
+        if (curr_time - auction_clock >= 10):
+            # recalculate top 4 interested uploaders 
+            auction_clock = time.monotonic() # reset clock
+
+        if (curr_time - charity_clock >= 30):
+            # optimistically unchoke a new person 
+            charity_clock = time.monotonic() # reset clock
+        
+
+    # BRAINSTORM:
     # get list of all peer ips from tracker
     # maintain data structure to associate peerids with IP:port pairs
         # do peerids get given by tracker or not? 
