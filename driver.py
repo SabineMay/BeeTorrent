@@ -2,6 +2,7 @@ import selectors
 import socket 
 import sys
 from Bee import Bee
+from torrent_get_requests import get_info_from_tracker_specified_in_file
 import time
 
 from bcoding import bencode, bdecode
@@ -22,7 +23,10 @@ def main():
     # print("Tracker located at " + tracker_addr[0] + ":" + tracker_addr[1]\n)
     # tracker_sock.send(HTTP get request) # send request to tracker with info about the socket we're listening on 
     # bdata = tracker_sock.recv() # receive bencoded tracker response
-    metadata = {"interval": 100, "peers":[{"peer id": 5, "ip": "127.0.0.1", "port": 1024}]} # metadata = bdecode(bdata)
+
+    ((tracker_domain, tracker_port), metadata) = get_info_from_tracker_specified_in_file("tor-file-examples/kali-linux.torrent", 6881, event='started')   
+
+    # metadata = {"interval": 100, "peers":[{"peer id": 5, "ip": "127.0.0.1", "port": 1024}]} # metadata = bdecode(bdata)
     
     if ("failure reason" in metadata): 
         print("Failed to get metadata from tracker: " + metadata["failure reason"] + "\n")
