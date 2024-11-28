@@ -31,7 +31,7 @@ def main():
     interval = metadata["interval"]
     peers = metadata["peers"]
     swarm: list[Bee] = list()
-    for peer in metadata["peers"]:
+    for peer in peers:
         newbie = Bee()
         newbie.set_id(peer["peer id"], peer["ip"], peer["port"]) # potential problem: does tracker return ip as a dotted decimal string or an integer?
         newbie.client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
