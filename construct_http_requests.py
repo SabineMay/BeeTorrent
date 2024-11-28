@@ -1,5 +1,5 @@
 HTTP_LINE_END = "\r\n"
-USER_AGENT = "Wget/1.21.3"
+USER_AGENT = "duTorrent/4.0"
 
 def construct_GET_request(host_domain, host_port, path):
     request = ""
