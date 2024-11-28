@@ -56,7 +56,7 @@ def main():
         
         for key, mask in events: 
             
-            # getting a message from a peer who we haven't RECEIVED a message from yet 
+            # getting a message from a peer who we haven't RECEIVED a message from yet (i.e. there isn't a defined server_sock) 
             if (key.fd == listen_sock): 
                 addr, server_sock = key.fd.accept()
             
@@ -75,6 +75,7 @@ def main():
                 else:
                     pass # handle_msg(curr.client_sock, key.fobject) <-- in another .py module
             
+            # getting a message from a peer who we HAVE received a message from before (i.e. there is a defined server_sock)
             else: 
                 curr = None
                 for bee in swarm: 
