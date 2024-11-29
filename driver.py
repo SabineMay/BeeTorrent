@@ -28,7 +28,9 @@ def main():
 
     print(metadata)
 
-    return
+    # peers (in metadata) can either be a dictionary or a bytestring in the following format:
+    # 4 bytes for ip address of peer 1, 2 bytes for port of peer 1, 4 bytes for ip of peer 2, 2 bytes for port
+    # of peer 2, etc.
 
     # metadata = {"interval": 100, "peers":[{"peer id": 5, "ip": "127.0.0.1", "port": 1024}]} # metadata = bdecode(bdata)
     
