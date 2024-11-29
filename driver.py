@@ -39,7 +39,7 @@ def main():
     sel.register(listen_sock, selectors.EVENT_READ)
 
     metadata = get_info_from_tracker_specified_in_file("tor-file-examples/cosmos-laundromat.torrent", port, event='started')
-    
+        
     # peers (in metadata) can either be a dictionary or a bytestring in the following format:
     # 4 bytes for ip address of peer 1, 2 bytes for port of peer 1, 4 bytes for ip of peer 2, 2 bytes for port
     # of peer 2, etc.
@@ -76,7 +76,7 @@ def main():
         try:
             newbie.sock.connect(newbie.addr) 
             # do handshake
-            # delete peer and close socket if handshake failed
+            # close socket if handshake failed
         except Exception as e: 
             print("Could not connect to peer " + str(newbie.addr) + " (" + (str(e)) + ")\n")
             newbie.sock.close()
