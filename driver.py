@@ -60,6 +60,7 @@ def main():
         compact = True
         peers = [peers[i:i+6] for i in range(0, len(peers), 6)]
     
+    print(peers)
     for peer in peers:
         newbie = Bee()
         
@@ -68,22 +69,24 @@ def main():
         else: 
             newbie.set_id(peer["peer id"], peer["ip"], peer["port"]) # potential problem: does tracker return ip as a dotted decimal string or an integer?
         
+        newbie.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        newbie.sock.settimeout(0.1)
+        
         try:
-            newbie.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            newbie.client_sock.connect(newbie.addr) 
+            newbie.sock.connect(newbie.addr) 
             # do handshake
             # delete peer and close socket if handshake failed
-        except: 
-            print("Connection to peer " + str(newbie.addr) + " refused\n")
+        except Exception as e: 
+            print("Could not connect to peer " + str(newbie.addr) + " (" + (str(e)) + ")\n")
             newbie.sock.close()
-            newbie.sock = None
         else: 
             swarm.append(newbie)
-        
+    
     # all peers start off choked and us not interested
     for bee in swarm: 
         # bee.sock.send(choke)
         # bee.sock.send(not interested)
+        print("test")
         print(bee.to_string())
         
     auction_clock = time.monotonic() # 10 seconds should elapse before every non-optimistic choke/unchoke
