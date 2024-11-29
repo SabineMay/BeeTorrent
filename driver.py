@@ -2,7 +2,7 @@ import selectors
 import socket 
 import sys
 from Bee import Bee
-from torrent_get_requests import *
+from get_info_from_tracker import *
 import time
 import requests
 import random
@@ -37,7 +37,7 @@ def main():
     
     sel.register(listen_sock, selectors.EVENT_READ)
 
-    ((tracker_domain, tracker_port), metadata) = get_info_from_tracker_specified_in_file("tor-file-examples/kali-linux.torrent", 6881, event='started')   
+    metadata = get_info_from_tracker_specified_in_file("tor-file-examples/cosmos-laundromat.torrent", port, event='started')
     
     # peers (in metadata) can either be a dictionary or a bytestring in the following format:
     # 4 bytes for ip address of peer 1, 2 bytes for port of peer 1, 4 bytes for ip of peer 2, 2 bytes for port

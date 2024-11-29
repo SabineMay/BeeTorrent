@@ -75,7 +75,3 @@ def recv_http_response(sock):
     http_body = recv_message_tcp(sock, content_length)
 
     return http_body
-    
-
-    
-    
