@@ -331,4 +331,5 @@ def extract_ip(byte_arr):
     
 
 def extract_port(byte_arr):
-    return str(byte_arr[4]) + str(byte_arr[5])
+    print(str(byte_arr[4]))
+    return str(byte_arr[4] * 10 + byte_arr[5])
