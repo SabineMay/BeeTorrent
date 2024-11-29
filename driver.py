@@ -70,7 +70,7 @@ def main():
             newbie.set_id(peer["peer id"], peer["ip"], peer["port"]) # potential problem: does tracker return ip as a dotted decimal string or an integer?
         
         newbie.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        newbie.sock.settimeout(0.1)
+        newbie.sock.settimeout(0.05)
         
         try:
             newbie.sock.connect(newbie.addr) 
@@ -80,6 +80,10 @@ def main():
             print("Could not connect to peer " + str(newbie.addr) + " (" + (str(e)) + ")\n")
             newbie.sock.close()
         else: 
+            # recommended to set non blocking for use with selectors, so in case of edge cases the program won't hang
+            # kept the socket blocking durring connect() so that we know if connect failures are from 
+            # server not responding (timeout) or server actively rejecting us
+            newbie.sock.setblocking(False) 
             swarm.append(newbie)
     
     # all peers start off choked and us not interested
