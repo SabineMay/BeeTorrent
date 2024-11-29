@@ -6,6 +6,7 @@ from get_info_from_tracker import *
 import time
 import requests
 import random
+from handshake import *
 
 from bcoding import bencode, bdecode
 
@@ -16,6 +17,16 @@ def main():
     random_bytes = random.randbytes(12)
     myid = azureus + random_bytes
     print("My id is " + str(myid) + "\n")
+
+    # info_hash for use in handshake
+    torfile = open('tor-file-examples/cosmos-laundromat.torrent', 'rb')
+    tde = bdecode(torfile)
+    h = hashlib.sha1()
+
+    h.update(bencode(tde['info']))
+
+    info_hash = h.digest()
+
     
     # used to poll over peer sockets 
     sel = selectors.DefaultSelector() 
@@ -30,7 +41,7 @@ def main():
     
     # port on which I listen for new connections;
     # communicated to tracker 
-    port = 1025 # port = int(sys.argv[1]) # user-set port on which to accept peer connections
+    port = 1027 # port = int(sys.argv[1]) # user-set port on which to accept peer connections
     
     listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listen_sock.bind(("0.0.0.0", port)) 
@@ -84,6 +95,8 @@ def main():
             # recommended to set non blocking for use with selectors, so in case of edge cases the program won't hang
             # kept the socket blocking durring connect() so that we know if connect failures are from 
             # server not responding (timeout) or server actively rejecting us
+            send_handshake(newbie.sock, info_hash, myid)
+            recv_handshake(newbie.sock)
             print("Sucesfully connected to peer " + str(newbie.addr) + "\n")
             newbie.sock.setblocking(False) 
             swarm.append(newbie)
