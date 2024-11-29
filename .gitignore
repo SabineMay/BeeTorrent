@@ -18,6 +18,7 @@
 # personal python venvs
 sabine-env/
 yasadu-env/
+patrick-venv/
 
 # pycache
 __pycache__/
