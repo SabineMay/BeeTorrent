@@ -87,4 +87,10 @@ def get_info_from_tracker_specified_in_file(torrent_file_path, listening_port, u
     # decode and return
     return ((host_domain, port_number), bdecode(resp))
     
+# byte array should be 6 bytes long, in hexadecimal
+def extract_ip(byte_arr):
+    return str(byte_arr[0]) + "." + str(byte_arr[1]) + "."  + str(byte_arr[2]) + "." + str(byte_arr[3])
+    
 
+def extract_port(byte_arr):
+    return str(byte_arr[4]) + str(byte_arr[5])
