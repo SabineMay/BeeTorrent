@@ -331,7 +331,4 @@ def extract_ip(byte_arr):
     
 
 def extract_port(byte_arr):
-    # return str(byte_arr[4] * 256 + byte_arr[5])
-    temp = int.from_bytes(bytearray([byte_arr[4], byte_arr[5]]), byteorder="big", signed="False")
-    print(temp)
-    return temp
+    return byte_arr[4] * 256 + byte_arr[5]
