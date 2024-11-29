@@ -13,10 +13,10 @@ class Bee: # part of the swarm
         
         return False
 
-    # takes strings for all
+    # takes strings for ip, int for port
     def set_id(self, peerid, ip, port):
         self.peerid = peerid 
-        self.addr = (ip, int(port, 16))
+        self.addr = (ip, port)
         
     def reset_clock(self):
         self.clock = time.monotonic()

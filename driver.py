@@ -26,6 +26,7 @@ def main():
     # your ip via the socket connection you have with it;
     # this also might not work in docker or VM
     ip = requests.get('https://checkip.amazonaws.com').text.strip() 
+    print("my ip is: " + str(ip))
     
     # port on which I listen for new connections;
     # communicated to tracker 
@@ -70,7 +71,7 @@ def main():
             newbie.set_id(peer["peer id"], peer["ip"], peer["port"]) # potential problem: does tracker return ip as a dotted decimal string or an integer?
         
         newbie.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        newbie.sock.settimeout(0.05)
+        newbie.sock.settimeout(1)
         
         try:
             newbie.sock.connect(newbie.addr) 
@@ -83,6 +84,7 @@ def main():
             # recommended to set non blocking for use with selectors, so in case of edge cases the program won't hang
             # kept the socket blocking durring connect() so that we know if connect failures are from 
             # server not responding (timeout) or server actively rejecting us
+            print("Sucesfully connected to peer " + str(newbie.addr) + "\n")
             newbie.sock.setblocking(False) 
             swarm.append(newbie)
     
@@ -90,7 +92,6 @@ def main():
     for bee in swarm: 
         # bee.sock.send(choke)
         # bee.sock.send(not interested)
-        print("test")
         print(bee.to_string())
         
     auction_clock = time.monotonic() # 10 seconds should elapse before every non-optimistic choke/unchoke
