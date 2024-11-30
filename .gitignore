@@ -2,6 +2,7 @@
 *.out
 *.exe
 *~
+*.log
 .DS_STORE
 
 # Visual Studio Code (un)code
