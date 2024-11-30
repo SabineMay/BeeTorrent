@@ -11,7 +11,7 @@ NETWORK_ORDER = 'big'
 MAGIC_NUMBER_UDP = 0x41727101980
 MAX_UDP_PACKET_SIZE = 65507
 
-def create_torrent_get_request_from_file(torrent_file_path, listening_port, uploaded = 0, downloaded = 0, left = None, event = None):
+def create_torrent_get_request_from_file(torrent_file_path, listening_port, my_id, uploaded = 0, downloaded = 0, left = None, event = None):
     torfile = open(torrent_file_path, 'rb')
     tde = bdecode(torfile)
 
@@ -34,10 +34,8 @@ def create_torrent_get_request_from_file(torrent_file_path, listening_port, uplo
     params = {}
     
     params['info_hash'] = urllib.parse.quote_from_bytes(h.digest())
-   
-    # temporary while we figure out what peer id to use
-    # TODO figure this out
-    params['peer_id'] = params['info_hash']
+
+    params['peer_id'] = urllib.parse.quote_from_bytes(my_id)
 
     params['port'] = str(listening_port)
 
@@ -88,7 +86,7 @@ def create_udp_connect_request(transaction_id):
 
     return connect_request
 
-def create_udp_announce_request(connection_id_bytes, transaction_id, tde, listening_port, uploaded, downloaded, left, event):
+def create_udp_announce_request(connection_id_bytes, transaction_id, tde, listening_port, peer_id, uploaded, downloaded, left, event):
     if left == None:
         if 'length' in tde['info'].keys():
             left = int(tde['info']['length']) - downloaded
@@ -128,8 +126,7 @@ def create_udp_announce_request(connection_id_bytes, transaction_id, tde, listen
     announce_request += h.digest()
 
     # peer id
-    # TODO figure this out
-    announce_request += h.digest()
+    announce_request += peer_id
 
     # uploaded, downloaded, and left
     announce_request += downloaded.to_bytes(8, NETWORK_ORDER)
@@ -159,7 +156,7 @@ def create_udp_announce_request(connection_id_bytes, transaction_id, tde, listen
 
 
 
-def perform_udp_tracker_protocol(sock, torrent_file_path, listening_port, uploaded = 0, downloaded = 0, left = None, event = 'started'):
+def perform_udp_tracker_protocol(sock, torrent_file_path, listening_port, peer_id, uploaded = 0, downloaded = 0, left = None, event = 'started'):
     torfile = open(torrent_file_path, 'rb')
     tde = bdecode(torfile)
     
@@ -197,11 +194,8 @@ def perform_udp_tracker_protocol(sock, torrent_file_path, listening_port, upload
                 recvd_trid_bytes = recvd[4:8]
 
                 if recvd_trid_bytes != transaction_id.to_bytes(4, NETWORK_ORDER):
-                    # if we got a response we didn't expect, retry
-                    last_connect_request_send_time = time.time()
-                    sock.sendto(connect_request, (host_domain, port_number))
-                    n += 1
-                    continue
+                    # if we got a response we didn't expect, raise error
+                    raise UnexpectedPacket("perform_udp_tracker_protocol, received unexpected transaction id in response to connect request")
                 else:
                     last_connect_response_recv_time = time.time()
                     break
@@ -219,13 +213,13 @@ def perform_udp_tracker_protocol(sock, torrent_file_path, listening_port, upload
         
         # if we didn't get an answer, raise an error
         if n >= 9:
-            raise RuntimeError("timed out during initial connection to UDP tracker")
+            raise socket.timeout("perform_udp_tracker_protocol timed out when waiting for connect response")
         
         recvd_connection_id_bytes = recvd[8:]
 
         transaction_id = rand_transaction_id()
         
-        announce_request = create_udp_announce_request(recvd_connection_id_bytes, transaction_id, tde, listening_port, uploaded, downloaded, left, event)
+        announce_request = create_udp_announce_request(recvd_connection_id_bytes, transaction_id, tde, listening_port, peer_id, uploaded, downloaded, left, event)
 
         sock.sendto(announce_request, (host_domain, port_number))
 
@@ -245,9 +239,7 @@ def perform_udp_tracker_protocol(sock, torrent_file_path, listening_port, upload
 
                 if recvd_trid_bytes != transaction_id.to_bytes(4, NETWORK_ORDER):
                     # if we got a response we didn't expect, retry
-                    sock.sendto(announce_request, (host_domain, port_number))
-                    n += 1
-                    continue
+                    raise UnexpectedPacket("perform_udp_tracker_protocol, received unexpected transaction id in response to announce request")
                 else:
                     break
             except socket.timeout:
@@ -270,7 +262,7 @@ def perform_udp_tracker_protocol(sock, torrent_file_path, listening_port, upload
             continue
         
         if n >= 9:
-            raise RuntimeError("timed out during wait for announce response")
+            raise socket.timeout("perform_udp_tracker_protocol timed out when waiting for announce response")
 
         num_leechers = int.from_bytes(recvd[12:16], NETWORK_ORDER)
         num_seeders = int.from_bytes(recvd[16:20], NETWORK_ORDER) 
@@ -287,7 +279,7 @@ def perform_udp_tracker_protocol(sock, torrent_file_path, listening_port, upload
 
 
 # function that returns metadata from tracker
-def get_info_from_tracker_specified_in_file(torrent_file_path, listening_port, uploaded = 0, downloaded = 0, left = None, event = 'started'):
+def get_info_from_tracker_specified_in_file(torrent_file_path, listening_port, peer_id, uploaded = 0, downloaded = 0, left = None, event = 'started'):
     torfile = open(torrent_file_path, 'rb')
     tde = bdecode(torfile)
 
@@ -308,18 +300,22 @@ def get_info_from_tracker_specified_in_file(torrent_file_path, listening_port, u
         sock.connect((host_domain, port_number))
 
         # send a get request to the tracker for this torrent
-        msg = create_torrent_get_request_from_file(torrent_file_path, listening_port, uploaded = uploaded, downloaded = downloaded, left = left, event = event)
-        send_message_tcp(msg, sock)
+        msg = create_torrent_get_request_from_file(torrent_file_path, listening_port, peer_id, uploaded = uploaded, downloaded = downloaded, left = left, event = event)
+        
+        try:
+            send_message_tcp(msg, sock)
+            # receive the response back, the payload of the http response is stored in resp
+            resp = recv_http_response(sock)
+        except socket.timeout:
+            raise socket.timeout("Timeout when connecting to http tracker")
 
-        # receive the response back, the payload of the http response is stored in resp
-        resp = recv_http_response(sock)
 
         # decode and return
         return bdecode(resp)
     elif "udp://" in tde['announce']:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-        tracker_info = perform_udp_tracker_protocol(sock, torrent_file_path, listening_port, uploaded = uploaded, downloaded = downloaded, left = left, event = event)
+        tracker_info = perform_udp_tracker_protocol(sock, torrent_file_path, listening_port, peer_id, uploaded = uploaded, downloaded = downloaded, left = left, event = event)
 
         # decode and return
         return tracker_info

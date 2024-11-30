@@ -4,14 +4,17 @@ import sys
 from Bee import Bee
 from get_info_from_tracker import *
 import time
-import requests
 import random
 from handshake import *
+from errors import *
 
 from bcoding import bencode, bdecode
 
+TORRENT_FILE_PATH = 'tor-file-examples/cosmos-laundromat.torrent'
 
 def main():
+    initiate_logs()
+
     # peerid communicated to tracker and to peers during handshake
     azureus = ("-MD0417-").encode("utf-8")
     random_bytes = random.randbytes(12)
@@ -19,7 +22,7 @@ def main():
     print("My id is " + str(myid) + "\n")
 
     # info_hash for use in handshake
-    torfile = open('tor-file-examples/cosmos-laundromat.torrent', 'rb')
+    torfile = open(TORRENT_FILE_PATH, 'rb')
     tde = bdecode(torfile)
     h = hashlib.sha1()
 
@@ -31,13 +34,15 @@ def main():
     # used to poll over peer sockets 
     sel = selectors.DefaultSelector() 
     
+    # commented out below because we don't need it (don't need to explicitly tell the tracker our ip)
+
     # get visible IP of this machine - requires requests library (or manual conversation with an external host);
     # see https://stackoverflow.com/questions/17309288/importerror-no-module-named-requests;
     # probably not actually necessary for this assigment - the tracker determines and advertises
     # your ip via the socket connection you have with it;
     # this also might not work in docker or VM
-    ip = requests.get('https://checkip.amazonaws.com').text.strip() 
-    print("my ip is: " + str(ip))
+    # ip = requests.get('https://checkip.amazonaws.com').text.strip() 
+    # print("my ip is: " + str(ip))
     
     # port on which I listen for new connections;
     # communicated to tracker 
@@ -49,7 +54,15 @@ def main():
     
     sel.register(listen_sock, selectors.EVENT_READ)
 
-    metadata = get_info_from_tracker_specified_in_file("tor-file-examples/cosmos-laundromat.torrent", port, event='started')
+    metadata = None
+    
+    try:
+        metadata = get_info_from_tracker_specified_in_file(TORRENT_FILE_PATH, port, myid, event='started')
+    except Exception as e:
+        log_error(Exception("Failed when getting information from tracker: " + str(e)))
+        print("Getting information from tracker did not work with error " + str(e))
+        print("Make sure the tracker is up and running")
+        exit()
     
     # peers (in metadata) can either be a dictionary or a bytestring in the following format:
     # 4 bytes for ip address of peer 1, 2 bytes for port of peer 1, 4 bytes for ip of peer 2, 2 bytes for port
@@ -90,16 +103,21 @@ def main():
             # delete peer and close socket if handshake failed
         except Exception as e: 
             print("Could not connect to peer " + str(newbie.addr) + " (" + (str(e)) + ")\n")
+            log_error(Exception("Could not connect to peer " + str(newbie.addr) + " (" + (str(e)) + ")"))
             newbie.sock.close()
         else: 
             # recommended to set non blocking for use with selectors, so in case of edge cases the program won't hang
             # kept the socket blocking durring connect() so that we know if connect failures are from 
             # server not responding (timeout) or server actively rejecting us
-            send_handshake(newbie.sock, info_hash, myid)
-            recv_handshake(newbie.sock)
-            print("Sucesfully connected to peer " + str(newbie.addr) + "\n")
-            newbie.sock.setblocking(False) 
-            swarm.append(newbie)
+            try:
+                send_handshake(newbie.sock, info_hash, myid)
+                recv_handshake(newbie.sock)
+                print("Sucesfully connected to peer " + str(newbie.addr) + "\n")
+                newbie.sock.setblocking(False) 
+                swarm.append(newbie)
+            except Exception as e:
+                print("Failed to handshake with peer " + str(newbie.addr) + "\n")
+                log_error(Exception("Failed handshake with " + str(newbie.addr) +  ": " + str(e)))
     
     # all peers start off choked and us not interested
     for bee in swarm: 
