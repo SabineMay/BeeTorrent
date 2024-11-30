@@ -4,6 +4,8 @@ def send_handshake(socket, info_hash, peer_id):
     pstr = "BitTorrent protocol"
     pstrlen = (len(pstr)).to_bytes(1)
     reserved = bytearray(8) # Figure out what reserved bits are
+    #reserved[5] = 24
+    #reserved[7] = 5
 
     send_message_tcp(pstrlen, socket)
     send_message_tcp(pstr.encode("utf-8"), socket)

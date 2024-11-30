@@ -41,7 +41,7 @@ def main():
     
     # port on which I listen for new connections;
     # communicated to tracker 
-    port = 1027 # port = int(sys.argv[1]) # user-set port on which to accept peer connections
+    port = 1025 # port = int(sys.argv[1]) # user-set port on which to accept peer connections
     
     listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listen_sock.bind(("0.0.0.0", port)) 
@@ -96,8 +96,8 @@ def main():
             # kept the socket blocking durring connect() so that we know if connect failures are from 
             # server not responding (timeout) or server actively rejecting us
             send_handshake(newbie.sock, info_hash, myid)
-            recv_handshake(newbie.sock)
             print("Sucesfully connected to peer " + str(newbie.addr) + "\n")
+            recv_handshake(newbie.sock)
             newbie.sock.setblocking(False) 
             swarm.append(newbie)
     
