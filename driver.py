@@ -6,6 +6,10 @@ from get_info_from_tracker import *
 import time
 import requests
 import random
+from construct_messages import *
+from handle_messages import *
+import math
+from PieceList import PieceList
 
 from bcoding import bencode, bdecode
 
@@ -16,6 +20,13 @@ def main():
     random_bytes = random.randbytes(12)
     myid = azureus + random_bytes
     print("My id is " + str(myid) + "\n")
+    
+    # make and/or clear file to hold our single torrent-file answer
+    torrent_file_path = "tor-file-examples/cosmos-laundromat.torrent"
+    torrent_name_list = torrent_file_path.split("/")
+    output_file_name = (torrent_name_list[len(torrent_name_list) - 1].split("."))[0] + "_bytes"
+    output_file = open(output_file_name, "wb")
+    
     
     # used to poll over peer sockets 
     sel = selectors.DefaultSelector() 
@@ -28,17 +39,38 @@ def main():
     ip = requests.get('https://checkip.amazonaws.com').text.strip() 
     print("my ip is: " + str(ip))
     
-    # port on which I listen for new connections;
-    # communicated to tracker 
-    port = 1025 # port = int(sys.argv[1]) # user-set port on which to accept peer connections
+    # port on which to listen and accept peer connections, communicated to tracker 
+    # in practice we are going to have to be the one initating connections to our peers because
+    # no one is going to be able to get through our internet firewall 
+    port = 1025 # port = int(sys.argv[1]) # should this be user-set?
     
     listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listen_sock.bind(("0.0.0.0", port)) 
     listen_sock.listen(5) # listen to a max of 5 queued connections, standard for bittorrent
     
     sel.register(listen_sock, selectors.EVENT_READ)
-
-    metadata = get_info_from_tracker_specified_in_file("tor-file-examples/cosmos-laundromat.torrent", port, event='started')
+    
+    # Get information from torrent file about piece length and total number of pieces
+    torrent_file = open(torrent_file_path, 'rb')
+    info_dict = bdecode(torrent_file)["info"]
+    
+    output_file_length = 0
+    piece_length = info_dict["piece length"]
+    
+    if "files" in info_dict: 
+        # mult-file 
+        for file_dict in info_dict["files"]:
+            output_file_length += file_dict["length"]
+    else: 
+        # single file
+        output_file_length = info_dict["length"]
+        
+    num_pieces = math.ceil(output_file_length / piece_length)
+    
+    print("This file has " + str(num_pieces) + " pieces\n")
+    
+    # Get information from tracker about peers
+    metadata = get_info_from_tracker_specified_in_file(torrent_file_path, port, event='started')
         
     # peers (in metadata) can either be a dictionary or a bytestring in the following format:
     # 4 bytes for ip address of peer 1, 2 bytes for port of peer 1, 4 bytes for ip of peer 2, 2 bytes for port
@@ -51,8 +83,9 @@ def main():
     
     interval = metadata["interval"]
     peers = metadata["peers"]
-    print("Metadata is: " + str(metadata) + "\n")
+    # print("Metadata is: " + str(metadata) + "\n")
     swarm: list[Bee] = list()
+    num_bees = 0
     compact = False
     
     if (not isinstance(peers, list)):
@@ -61,9 +94,11 @@ def main():
         compact = True
         peers = [peers[i:i+6] for i in range(0, len(peers), 6)]
     
-    print(peers)
+    
+    # For each peer, create a Bee to store their state and do a 
+    # handshake with them
     for peer in peers:
-        newbie = Bee()
+        newbie = Bee(num_pieces)
         
         if (compact):
             newbie.set_id(None, extract_ip(peer), extract_port(peer))
@@ -87,16 +122,52 @@ def main():
             print("Sucesfully connected to peer " + str(newbie.addr) + "\n")
             newbie.sock.setblocking(False) 
             swarm.append(newbie)
+            num_bees += 1
     
-    # all peers start off choked and us not interested
+    # Tell all peers that they are choked and we are not interested 
     for bee in swarm: 
-        # bee.sock.send(choke)
-        # bee.sock.send(not interested)
+        send_message_tcp(choke_msg, bee.sock)
+        send_message_tcp(not_interested_msg, bee.sock)
         print(bee.to_string())
-        
+    
     auction_clock = time.monotonic() # 10 seconds should elapse before every non-optimistic choke/unchoke
     charity_clock = time.monotonic() # 30 seconds should elapse before every optimistic unchokex
     tracker_clock = time.monotonic() # interval seconds should elapse before we update tracker with our status and how much we've downloaded/uploaded
+    
+    # Begin main logic to handle never-ending byte stream of <prefix_len><msg>
+    piecelist = PieceList(num_pieces, piece_length)
+    output_file.write(b'\x00' * output_file_length)
+    
+    def handle_msg(prefix_len, bee):
+        if (prefix_len == 0):
+            handle_keepalive(bee)
+        else: 
+            msg = recv_message_tcp(bee.sock, prefix_len)
+            match (msg[5]):
+                case 0: 
+                    handle_choke()
+                case 1:
+                    handle_unchoke()
+                case 2: 
+                    handle_interested()
+                case 3:
+                    handle_not_interested()
+                case 4:
+                    handle_have()
+                case 5:
+                    handle_bitfield()
+                case 6:
+                    handle_request()
+                case 7:
+                    # calculate block len from prefix_len - 9
+                    handle_piece()
+                case 8:
+                    handle_cancel()
+                case 9:
+                    handle_port()
+                case _: 
+                    print("Peer message received with unkown ID " + msg[5])
+    
     
     while(True):
         events = sel.select(timeout = 5) # potential issue: need to adjust timeout based on how much time left on auction/tracker/charity clocks
@@ -138,7 +209,9 @@ def main():
                     print("Couldn't find peer assocated with selected socket in swarm")
                 
                 else: 
-                    pass # handle_msg(curr.client_sock, key.fobject) <-- in another .py module
+                    msg = recv_message_tcp(curr.sock, 4)
+                    prefix_len = int.from_bytes(msg[0:5:1], byteorder="big")
+                    handle_msg(prefix_len, curr)
             
                 # for handle_message: 
                 # if message is us getting pieces, going to need a datastructure to keep track of top 4 uploaders for future unchoking
@@ -186,7 +259,6 @@ def main():
 
     # every 30 seconds loop
         # change who is optimistically unchoked 
-
 
 
 if __name__=="__main__":
