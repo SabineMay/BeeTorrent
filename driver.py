@@ -58,7 +58,7 @@ def main():
     # port on which to listen and accept peer connections, communicated to tracker 
     # in practice we are going to have to be the one initating connections to our peers because
     # no one is going to be able to get through our internet firewall 
-    port = 6881 # port = int(sys.argv[1]) # should this be user-set?
+    port = 1027 # port = int(sys.argv[1]) # should this be user-set?
     
     listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listen_sock.bind(("0.0.0.0", port)) 
