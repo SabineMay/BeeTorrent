@@ -7,6 +7,7 @@ import time
 import random
 from handshake import *
 from errors import *
+from message import *
 
 from bcoding import bencode, bdecode
 
@@ -120,9 +121,11 @@ def main():
                 log_error(Exception("Failed handshake with " + str(newbie.addr) +  ": " + str(e)))
     
     # all peers start off choked and us not interested
-    for bee in swarm: 
+    for bee in swarm:
         # bee.sock.send(choke)
         # bee.sock.send(not interested)
+        choke(bee.sock)
+        not_interested(bee.sock)
         print(bee.to_string())
         
     auction_clock = time.monotonic() # 10 seconds should elapse before every non-optimistic choke/unchoke
