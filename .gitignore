@@ -21,3 +21,8 @@ yasadu-env/
 
 # pycache
 __pycache__/
+
+# output files
+lots-of-numbers_bytes
+cosmos_laundromat_bytes
+alice_bytes
