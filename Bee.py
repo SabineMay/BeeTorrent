@@ -2,11 +2,19 @@ import time
 from bitstring import Bits, BitArray, BitStream, pack
 from Request import Request
 
+"""
+Class containing information about each peer.
+"""
+
 class Bee: # part of the swarm
     def __init__(self, num_pieces):
         self.peerid = None
         self.addr = (None, None)
         self.clock = time.monotonic()
+        
+        # Either the socket that we connected to the peer with, or the socket
+        # that listen() created after the peer connected to us
+        # Will almost certaintly be the former given that we're behind a firwall
         self.sock = None
         
         self.peer_interested = False
@@ -17,7 +25,7 @@ class Bee: # part of the swarm
         # number of blocks the peer has succesfully uploaded to me in this period
         self.blocks_uploaded = 0
         
-        # pieces that the peer has, used when I'm making requests
+        # pieces that the peer has, used to determine what I should request
         self.bitfield = BitArray(length=num_pieces)
         
         # blocks that the peer wants, updated when handling requests and used when unchoking

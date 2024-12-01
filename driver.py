@@ -17,6 +17,19 @@ from bcoding import bencode, bdecode
 TORRENT_FILE_PATH = 'tor-file-examples/cosmos-laundromat.torrent'
 
 def main():
+    """
+    Add some comments here detailing what variables we are keeping to maintain our own state and
+    the state of our peers.
+    
+    Ex. 
+    swarm: list of Bees | all state information on peers (socket, bitfield, etc)
+    piecelist: PieceList | state information about our pieces and blocks
+    myid: bytes | id that we advertise to tracker during GET and advertise to peers during handshake
+    output_file: byte file | file into which we write incoming blocks
+    
+    listen_sock | sock on which we listen for incoming peer connections; 
+                | will probably never get any action because we are behind a firewall 
+    """
     initiate_logs()
 
     # peerid communicated to tracker and to peers during handshake
@@ -58,7 +71,7 @@ def main():
     # port on which to listen and accept peer connections, communicated to tracker 
     # in practice we are going to have to be the one initating connections to our peers because
     # no one is going to be able to get through our internet firewall 
-    port = 1027 # port = int(sys.argv[1]) # should this be user-set?
+    port = 6881 # port = int(sys.argv[1]) # should this be user-set?
     
     listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listen_sock.bind(("0.0.0.0", port)) 

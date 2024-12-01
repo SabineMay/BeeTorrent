@@ -5,6 +5,12 @@ from send_receive_message import *
 from Request import Request
 import math
 
+"""
+Module that handles the receipt of peer messages. May send responses to peers
+if prompted (like when receiving a request), but does not contain logic for 
+self-initiated messages (like when genereating a request).
+"""
+
 def handle_keepalive(bee: Bee, msg): 
     bee.reset_clock()
 
@@ -40,7 +46,7 @@ def handle_request(bee: Bee, msg, piecelist: PieceList):
         piecelist.output_file.seek((idx * PieceList.piece_length) + begin, 0)
         send_message_tcp(construct_request_msg(idx, begin, piecelist.output_file.read(length)), bee.sock)
     else:
-        print("Request refused -- peer is unchoked byt we don't have the piece\n")
+        print("Request refused -- peer is unchoked but we don't have the piece\n")
         # question: peers should only request pieces we have, but if they don't...
         # do we need to tell peer why this request was refused?
 
