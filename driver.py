@@ -56,6 +56,7 @@ def main():
     
     output_file_length = 0
     piece_length = info_dict["piece length"]
+    hashes = info_dict["pieces"]
     
     if "files" in info_dict: 
         # mult-file 
@@ -67,7 +68,14 @@ def main():
         
     num_pieces = math.ceil(output_file_length / piece_length)
     
-    print("This file has " + str(num_pieces) + " pieces\n")
+    block_length = 16000 # MAX = 16000
+    if (piece_length < block_length):
+        print("Default block size of 16KiB being down-adjusted to match piece length\n")
+        block_length = piece_length
+        
+    blocks_per_piece = math.ceil(piece_length / block_length)
+    
+    print("This file has " + str(num_pieces) + " pieces, with " + str(blocks_per_piece) + " blocks per piece\n")
     
     # Get information from tracker about peers
     metadata = get_info_from_tracker_specified_in_file(torrent_file_path, port, event='started')
@@ -135,7 +143,7 @@ def main():
     tracker_clock = time.monotonic() # interval seconds should elapse before we update tracker with our status and how much we've downloaded/uploaded
     
     # Begin main logic to handle never-ending byte stream of <prefix_len><msg>
-    piecelist = PieceList(num_pieces, piece_length)
+    piecelist = PieceList(num_pieces, piece_length, blocks_per_piece, block_length, output_file, hashes)
     output_file.write(b'\x00' * output_file_length)
     
     def handle_msg(prefix_len, bee):
@@ -145,24 +153,28 @@ def main():
             msg = recv_message_tcp(bee.sock, prefix_len)
             match (msg[5]):
                 case 0: 
-                    handle_choke()
+                    handle_choke(bee, msg)
                 case 1:
-                    handle_unchoke()
+                    handle_unchoke(bee, msg)
                 case 2: 
-                    handle_interested()
+                    handle_interested(bee, msg)
                 case 3:
-                    handle_not_interested()
+                    handle_not_interested(bee, msg)
                 case 4:
-                    handle_have()
+                    handle_have(bee, msg)
                 case 5:
                     handle_bitfield()
                 case 6:
-                    handle_request()
+                    handle_request(bee, msg, piecelist)
                 case 7:
-                    # calculate block len from prefix_len - 9
-                    handle_piece()
+                    # calculate block length (X) from prefix_len - 9 (see wikitheory specs)
+                    X = prefix_len - 9
+                    if (handle_piece(bee, msg, X, piecelist)):
+                        # keep track of who uploaded us the most number of blocks (all block sizes are the same,
+                        # except for irregular blocks at the end of pieces, so estimate by counting by number of blocks)
+                        bee.blocks_uploaded += 1
                 case 8:
-                    handle_cancel()
+                    handle_cancel(bee, msg)
                 case 9:
                     handle_port()
                 case _: 
@@ -212,11 +224,6 @@ def main():
                     msg = recv_message_tcp(curr.sock, 4)
                     prefix_len = int.from_bytes(msg[0:5:1], byteorder="big")
                     handle_msg(prefix_len, curr)
-            
-                # for handle_message: 
-                # if message is us getting pieces, going to need a datastructure to keep track of top 4 uploaders for future unchoking
-                # if message is someone else requesting pieces, going to need a datastructure to keep track of current unchoked nodes to which we will respond
-                # this data structure needs to be visible to the auction clock and charity clock logic blocks below
                 
         for bee in swarm: 
             if (bee.get_time_elapsed() > 120): # 2 minutes since last message

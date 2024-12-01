@@ -14,8 +14,13 @@ class Bee: # part of the swarm
         self.me_interested = False
         self.me_choked = True
         
+        # number of blocks the peer has succesfully uploaded to me in this period
+        self.blocks_uploaded = 0
+        
+        # pieces that the peer has, used when I'm making requests
         self.bitfield = BitArray(length=num_pieces)
         
+        # blocks that the peer wants, updated when handling requests and used when unchoking
         self.request_queue = list()
         self.max_requests = 5
         self.num_requests = 0

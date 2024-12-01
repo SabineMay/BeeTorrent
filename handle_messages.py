@@ -3,6 +3,7 @@ from PieceList import PieceList
 from construct_messages import *
 from send_receive_message import *
 from Request import Request
+import math
 
 def handle_keepalive(bee: Bee, msg): 
     bee.reset_clock()
@@ -26,7 +27,7 @@ def handle_have(bee: Bee, msg):
 def handle_bitfield():
     print("No support for bitfield requests") # TODO: probably can implement this fairly easily, need decide if we need to send back a "can't do this" message if not
 
-def handle_request(bee: Bee, msg, piecelist: PieceList, output_file):
+def handle_request(bee: Bee, msg, piecelist: PieceList):
     idx = int.from_bytes(msg[1:5:1], byteorder="big")
     begin = int.from_bytes(msg[5:9:1], byteorder="big")
     length = int.from_byte(msg[9:13:1], byteorder="big")
@@ -36,44 +37,48 @@ def handle_request(bee: Bee, msg, piecelist: PieceList, output_file):
         bee.queue_request(Request(idx, begin, length))
     elif (piecelist.is_resolved(idx)): 
         print("Request answered -- peer is unchoked and we have the piece\n")
-        output_file.seek((idx * PieceList.piece_length) + begin, 0)
-        send_message_tcp(construct_request_msg(idx, begin, output_file.read(length)), bee.sock)
+        piecelist.output_file.seek((idx * PieceList.piece_length) + begin, 0)
+        send_message_tcp(construct_request_msg(idx, begin, piecelist.output_file.read(length)), bee.sock)
     else:
         print("Request refused -- peer is unchoked byt we don't have the piece\n")
         # question: peers should only request pieces we have, but if they don't...
         # do we need to tell peer why this request was refused?
 
-def handle_piece(bee: Bee, msg, block_len, piecelist: PieceList, output_file):
-    idx = int.from_bytes(msg[1:5:1], byteorder="big")
-    begin = int.from_bytes(msg[5:9:1], byteorder="big")
-    
-    if (piecelist.is_resolved(idx)):
-        print("Got a piece that we already knew\n")
-    elif (piecelist.is_requested(idx)):
-        block = msg[9:block_len:1]
-        output_file.seek((idx * PieceList.piece_length) + begin, 0)
-        output_file.write(block)
+def handle_piece(bee: Bee, msg, X, piecelist: PieceList):
+    if (X != piecelist.block_length):
+        print("Peer gave us an incorrectly-sized block\n")
         
-        # TODO: need to verify hash of piece when full piece is accumulated, and only mark as resolved once that happens
-        # Also need to somehow keep track of how specific blocks are remembered
-        piecelist.resolve() 
+    else: 
+        idx = int.from_bytes(msg[1:5:1], byteorder="big")
+        begin = int.from_bytes(msg[5:9:1], byteorder="big")
         
-        # maybe send out cancels?
-        # interesting question bc this piece message might only be giving us a block and not a whole piece 
-        # -- should we keep other requests that we already sent because they  might give us different parts of the
-        # piece? 
-        
-        # we shouldn't get overlapping blocks because we control the idx, begin parameters in request
-        # all the uploader has to do is respond with the number of bytes we requested
-        pass
-    elif (piecelist.is_ready()):
-        print("Got a piece that we didn't advertise for, or that has an incorrent status in piecelist\n")
+        # potential problem: need to check my math here
+        block_idx = min((begin // piecelist.block_length), piecelist.blocks_per_piece - 1)
+
+        if (piecelist.is_resolved(idx)):
+            print("Got a block for a piece that we already hash-verified\n")
+        elif(piecelist.is_received(idx, block_idx)):
+            print("Got a block that we already received\n")
+        elif (piecelist.is_requested(idx, block_idx)):
+            block = msg[9:X:1]
+            piecelist.output_file.seek((idx * piecelist.piece_length) + begin, 0)
+            piecelist.output_file.write(block)
+            
+            # TODO: verify that we are sent back a block we actually asked for before we recieve it
+            piecelist.receive(idx, block_idx) 
+
+            # TODO: maybe send out cancels?
+            # interesting question bc this piece message might only be giving us a block and not a whole piece 
+            # -- should we keep other requests that we already sent because they  might give us different parts of the
+            # piece? 
+        elif (piecelist.is_ready(idx, block_idx)):
+            print("Got a piece that we didn't advertise for, or that has an incorrent status in piecelist\n")
 
 def handle_cancel(bee: Bee, msg):
     idx = int.from_bytes(msg[1:5:1], byteorder="big")
     begin = int.from_bytes(msg[5:9:1], byteorder="big")
     length = int.from_byte(msg[9:13:1], byteorder="big")
-    bee.bitfield.set(False, idx) # need to maintain something more than a bitfield so that we have an independent request queue for each peer
+    bee.cancel_request(idx, begin, length)
 
 def handle_port():
     print("No support for port requests -- BT-DHT not implemented") #TODO: decide if we ne to send back a "can't do this message"
