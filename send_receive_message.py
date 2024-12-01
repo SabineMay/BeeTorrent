@@ -1,3 +1,4 @@
+from errors import *
 import socket
 
 
@@ -7,7 +8,7 @@ def send_message_tcp(msg, sock):
     while total_sent < len(msg):
         sent = sock.send(msg[total_sent:])
         if sent == 0:
-            raise RuntimeError("socket failed during send")
+            raise SocketDisconnected("socket disconnected during send")
         total_sent = total_sent + sent
 
 # receives a message over a given socket
@@ -17,7 +18,7 @@ def recv_message_tcp(sock, size):
     while total_recv < size:
         received = sock.recv(size - total_recv)
         if received == b'':
-            raise RuntimeError("disconnected during recv")
+            raise SocketDisconnected("socket disconnected during recv")
         msg += received
         total_recv += len(received)
     return msg
@@ -34,7 +35,7 @@ def recv_http_response(sock):
     next_string = recv_message_tcp(sock, 9).decode()
     
     if (next_string != "HTTP/1.1 "):
-        raise RuntimeError("expected http response in recv_http_response, non-http received")
+        raise UnexpectedPacket("expected http response in recv_http_response, non-http received")
     
     http_response += next_string
 
@@ -42,7 +43,7 @@ def recv_http_response(sock):
     next_string = recv_message_tcp(sock, 8).decode()
 
     if (next_string != "200 OK\r\n"):
-        raise RuntimeError("received non-200 response")
+        raise UnexpectedPacket("received non-200 response in recv_http_response")
     
     http_response += next_string
 

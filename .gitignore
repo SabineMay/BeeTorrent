@@ -2,6 +2,7 @@
 *.out
 *.exe
 *~
+*.log
 .DS_STORE
 
 # Visual Studio Code (un)code
@@ -18,6 +19,7 @@
 # personal python venvs
 sabine-env/
 yasadu-env/
+patrick-venv/
 
 # pycache
 __pycache__/
