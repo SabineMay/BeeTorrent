@@ -239,33 +239,6 @@ def main():
         if (curr_time - charity_clock >= 30):
             # optimistically unchoke a new person 
             charity_clock = time.monotonic() # reset clock
-        
-
-    # BRAINSTORM:
-    # get list of all peer ips from tracker
-    # maintain data structure to associate peerids with IP:port pairs
-        # do peerids get given by tracker or not? 
-            # yes, peerids are chosen by the peers themselves, and we verify they are 
-            # who they say they are during the handshaek
-            # we only need to generate our own peerid --> just use rand()? 
-        # potential problem: peerids need to be escaped
-    # interval = value gotten from tracker that tells you how often to rerequest peices 
-    # send choke and not interested to all peers
-        # question: we need to keep interested/not interested up to date at all times -> does this mean we need to 
-        # send periodic "still not interested" messages or do we only update when there is a change in our interest state? 
-    #
-
-    # need to maintain who is a "new" connection so that we can give them 3x greater probability of being optimistically unchoked 
-        # should we define newness by timestamp or some other combination of interest/unchoke historical states? 
-    # need to maintain keepalive timestamps/monotonic clock counters that we reset upon receipt of a keepalive message (or any other message probably)
-
-    # every ten seconds loop: 
-        # decide who to non-optimistcally unchoke, and choke everyone else (besides someone who si already optimistcally unchoked)
-
-    # question: why do nodes need to know if they're choked or not --> why isn't it just something that I need to know? 
-
-    # every 30 seconds loop
-        # change who is optimistically unchoked 
 
 
 if __name__=="__main__":
