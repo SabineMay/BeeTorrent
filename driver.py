@@ -198,39 +198,42 @@ def main():
     output_file.write(b'\x00' * output_file_length)
     
     def handle_msg(prefix_len, bee):
-        if (prefix_len == 0):
-            handle_keepalive(bee)
-        else: 
-            msg = recv_message_tcp(bee.sock, prefix_len)
-            print(msg)
-            match (msg[0]):
-                case 0: 
-                    handle_choke(bee, msg)
-                case 1:
-                    handle_unchoke(bee, msg)
-                case 2: 
-                    handle_interested(bee, msg)
-                case 3:
-                    handle_not_interested(bee, msg)
-                case 4:
-                    handle_have(bee, msg)
-                case 5:
-                    handle_bitfield()
-                case 6:
-                    handle_request(bee, msg, piecelist)
-                case 7:
-                    # calculate block length (X) from prefix_len - 9 (see wikitheory specs)
-                    X = prefix_len - 9
-                    if (handle_piece(bee, msg, X, piecelist)):
-                        # keep track of who uploaded us the most number of blocks (all block sizes are the same,
-                        # except for irregular blocks at the end of pieces, so estimate by counting by number of blocks)
-                        bee.blocks_uploaded += 1
-                case 8:
-                    handle_cancel(bee, msg)
-                case 9:
-                    handle_port()
-                case _: 
-                    print("Peer message received with unkown ID " + str(msg[5]))
+        try:
+            if (prefix_len == 0):
+                handle_keepalive(bee)
+            else: 
+                msg = recv_message_tcp(bee.sock, prefix_len)
+                print(msg)
+                match (msg[0]):
+                    case 0: 
+                        handle_choke(bee, msg)
+                    case 1:
+                        handle_unchoke(bee, msg)
+                    case 2: 
+                        handle_interested(bee, msg)
+                    case 3:
+                        handle_not_interested(bee, msg)
+                    case 4:
+                        handle_have(bee, msg)
+                    case 5:
+                        handle_bitfield()
+                    case 6:
+                        handle_request(bee, msg, piecelist)
+                    case 7:
+                        # calculate block length (X) from prefix_len - 9 (see wikitheory specs)
+                        X = prefix_len - 9
+                        if (handle_piece(bee, msg, X, piecelist)):
+                            # keep track of who uploaded us the most number of blocks (all block sizes are the same,
+                            # except for irregular blocks at the end of pieces, so estimate by counting by number of blocks)
+                            bee.blocks_uploaded += 1
+                    case 8:
+                        handle_cancel(bee, msg)
+                    case 9:
+                        handle_port()
+                    case _: 
+                        print("Peer message received with unkown ID " + str(msg[5]))
+        except Exception as e:
+            log_error(Exception("Error in handle_msg: " + str(e)))
     
     
     while(True):
@@ -272,11 +275,18 @@ def main():
                 
                 if (curr == None):
                     print("Couldn't find peer assocated with selected socket in swarm")
-                
                 else: 
-                    msg = recv_message_tcp(curr.sock, 4)
-                    prefix_len = int.from_bytes(msg[0:5:1], byteorder="big")
-                    handle_msg(prefix_len, curr)
+                    try:
+                        msg = recv_message_tcp(curr.sock, 4)
+                        prefix_len = int.from_bytes(msg[0:5:1], byteorder="big")
+                        handle_msg(prefix_len, curr)
+                    except Exception as e:
+                        # if we run into an error when receiving a message from the bee
+                        # then remove the bee from the swarm
+                        log_error(Exception("Exception when receiving message from " + curr.to_string() + ": " + str(e)))
+                        print("Error receiving a message from " + curr.to_string() + ", removing from the swarm")
+                        sel.unregister(bee.sock)
+                        swarm.remove(bee)
                     
                 
         for bee in swarm: 

@@ -69,6 +69,6 @@ class Bee: # part of the swarm
         return self.clock - time.monotonic()
     
     def to_string(self): 
-        return "Bee: [peer_id: " + str(self.peerid) + ", addr: " + str(self.addr[0]) + ":" + str(self.addr[1]) + ", clock: " + str(self.clock) + "]\n"
+        return "Bee: [peer_id: " + str(self.peerid) + ", addr: " + str(self.addr[0]) + ":" + str(self.addr[1]) + ", clock: " + str(self.clock) + "]"
     
 
