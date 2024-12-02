@@ -32,7 +32,6 @@ def handle_have(bee: Bee, msg):
 
 def handle_bitfield(bee: Bee, msg):
     bee.update_bitfield_from_received_bitfield(msg[1:])
-    print(bee.bitfield)
 
 def handle_request(bee: Bee, msg, piecelist: PieceList):
     idx = int.from_bytes(msg[1:5:1], byteorder="big")
@@ -56,19 +55,20 @@ def handle_piece(bee: Bee, msg, X, piecelist: PieceList):
         print("Peer gave us an incorrectly-sized block\n")
         
     else: 
-        idx = int.from_bytes(msg[1:5:1], byteorder="big")
+        piece_idx = int.from_bytes(msg[1:5:1], byteorder="big")
         begin = int.from_bytes(msg[5:9:1], byteorder="big")
         
         # potential problem: need to check my math here
-        block_idx = min((begin // piecelist.block_length), piecelist.blocks_per_piece - 1)
+        # block_idx = min((begin // piecelist.block_length), piecelist.blocks_per_piece - 1)
+        block_idx = begin % piecelist.block_length
 
-        if (piecelist.is_resolved(idx)):
+        if (piecelist.is_resolved(piece_idx)):
             print("Got a block for a piece that we already hash-verified\n")
-        elif(piecelist.is_received(idx, block_idx)):
+        elif(piecelist.is_received(piece_idx, block_idx)):
             print("Got a block that we already received\n")
-        elif (piecelist.is_requested(idx, block_idx)):
+        elif (piecelist.is_requested(piece_idx, block_idx)):
             block = msg[9:X:1]
-            piecelist.output_file.seek((idx * piecelist.piece_length) + begin, 0)
+            piecelist.output_file.seek((piece_idx * piecelist.piece_length) + begin, 0)
             piecelist.output_file.write(block)
             
             # TODO: verify that we are sent back a block we actually asked for before we recieve it
@@ -78,7 +78,7 @@ def handle_piece(bee: Bee, msg, X, piecelist: PieceList):
             # interesting question bc this piece message might only be giving us a block and not a whole piece 
             # -- should we keep other requests that we already sent because they  might give us different parts of the
             # piece? 
-        elif (piecelist.is_ready(idx, block_idx)):
+        elif (piecelist.is_ready(piece_idx, block_idx)):
             print("Got a piece that we didn't advertise for, or that has an incorrent status in piecelist\n")
 
 def handle_cancel(bee: Bee, msg):

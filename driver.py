@@ -231,7 +231,7 @@ def main():
                         handle_port()
                     case _: 
                         print("Peer message received with unkown ID " + str(msg[5]))
-        except Exception as e:
+        except SocketDisconnected as e:
             log_error(Exception("Error in handle_msg: " + str(e)))
     
     
@@ -279,7 +279,7 @@ def main():
                         msg = recv_message_tcp(curr.sock, 4)
                         prefix_len = int.from_bytes(msg[0:5:1], byteorder="big")
                         handle_msg(prefix_len, curr)
-                    except Exception as e:
+                    except SocketDisconnected as e:
                         # if we run into an error when receiving a message from the bee
                         # then remove the bee from the swarm
                         log_error(Exception("Exception when receiving message from " + curr.to_string() + ": " + str(e)))

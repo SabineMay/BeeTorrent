@@ -40,33 +40,33 @@ class PieceList:
     
     # Update status of block to REQUESTED
     def request(self, piece_idx, block_idx):
-        self.blocks[piece_idx + block_idx] = PieceList.Status.REQUESTED
+        self.blocks[piece_idx * _blocks_per_piece + block_idx] = PieceList.Status.REQUESTED
     
     # Update status of block to READY
     def ready(self, piece_idx, block_idx):
-        self.blocks[piece_idx + block_idx] = PieceList.Status.READY
+        self.blocks[piece_idx * _blocks_per_piece + block_idx] = PieceList.Status.READY
     
     # Update status of bock to RECEIVED, and attempt to 
     # resolve the piece that the block is a part of
     def receive(self, piece_idx, block_idx):
-        self.blocks[piece_idx + block_idx] = PieceList.Status.RECEIVED
+        self.blocks[piece_idx * _blocks_per_piece + block_idx] = PieceList.Status.RECEIVED
         self.attempt_resolve(piece_idx)
     
     # Returns True if status of block is REQUESTED
     def is_requested(self, piece_idx, block_idx):
-        if (self.blocks[piece_idx + block_idx] == PieceList.Status.REQUESTED):
+        if (self.blocks[piece_idx * _blocks_per_piece + block_idx] == PieceList.Status.REQUESTED):
             return True
         return False
     
     # Returns True if status of block is READY
     def is_ready(self, piece_idx, block_idx):
-        if (self.blocks[piece_idx + block_idx] == PieceList.Status.READY):
+        if (self.blocks[piece_idx * _blocks_per_piece + block_idx] == PieceList.Status.READY):
             return True
         return False
     
     # Returns True if status of block is RECEIVED
     def is_received(self, piece_idx, block_idx):
-        if (self.blocks[piece_idx + block_idx] == PieceList.Status.RECEIVED):
+        if (self.blocks[piece_idx * _blocks_per_piece + block_idx] == PieceList.Status.RECEIVED):
             return True
         return False
     
