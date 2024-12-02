@@ -168,7 +168,7 @@ def main():
             try:
                 send_handshake(newbie.sock, info_hash, myid)
                 recv_handshake(newbie.sock)
-                print(info_hash)
+                #print(info_hash)
                 print("Sucesfully connected to peer " + str(newbie.addr) + "\n")
                 newbie.sock.setblocking(False) 
                 swarm.append(newbie)
@@ -200,7 +200,7 @@ def main():
     def handle_msg(prefix_len, bee):
         try:
             if (prefix_len == 0):
-                handle_keepalive(bee, msg)
+                handle_keepalive(bee)
             else: 
                 msg = recv_message_tcp(bee.sock, prefix_len)
                 match (msg[0]):

@@ -11,7 +11,7 @@ if prompted (like when receiving a request), but does not contain logic for
 self-initiated messages (like when genereating a request).
 """
 
-def handle_keepalive(bee: Bee, msg): 
+def handle_keepalive(bee: Bee): 
     bee.reset_clock()
 
 def handle_choke(bee: Bee, msg):
