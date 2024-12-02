@@ -1,5 +1,4 @@
 import time
-from bitstring import Bits, BitArray, BitStream, pack
 from Request import Request
 
 """
@@ -26,7 +25,7 @@ class Bee: # part of the swarm
         self.blocks_uploaded = 0
         
         # pieces that the peer has, used to determine what I should request
-        self.bitfield = BitArray(length=num_pieces)
+        self.bitfield = [False] * num_pieces
         
         # blocks that the peer wants, updated when handling requests and used when unchoking
         self.request_queue = list()
@@ -67,6 +66,26 @@ class Bee: # part of the swarm
 
     def get_time_elapsed(self):
         return self.clock - time.monotonic()
+    
+    def set_bitfield_at_index(self, piece_idx, value):
+        self.bitfield[piece_idx] = value
+    
+    def update_bitfield_from_received_bitfield(self, bitfield):
+        i = 0
+
+        # get the nth bit in a given byte and return True if its 1 and False if its 0
+        boolean_from_bit = lambda byte, n: True if ((byte >> n) & 0x1 == 1) else False
+
+        # loop through the bytes and adjust the array accordingly
+        for byte in bitfield:
+            j = 0
+            while j < 8:
+                if (i * 8) + j < len(self.bitfield):
+                    self.bitfield[(i * 8) + j] = boolean_from_bit(byte, (7 - j))
+                else:
+                    break
+                j += 1
+            i += 1
     
     def to_string(self): 
         return "Bee: [peer_id: " + str(self.peerid) + ", addr: " + str(self.addr[0]) + ":" + str(self.addr[1]) + ", clock: " + str(self.clock) + "]"

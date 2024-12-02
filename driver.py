@@ -200,10 +200,9 @@ def main():
     def handle_msg(prefix_len, bee):
         try:
             if (prefix_len == 0):
-                handle_keepalive(bee)
+                handle_keepalive(bee, msg)
             else: 
                 msg = recv_message_tcp(bee.sock, prefix_len)
-                print(msg)
                 match (msg[0]):
                     case 0: 
                         handle_choke(bee, msg)
@@ -216,7 +215,7 @@ def main():
                     case 4:
                         handle_have(bee, msg)
                     case 5:
-                        handle_bitfield()
+                        handle_bitfield(bee, msg)
                     case 6:
                         handle_request(bee, msg, piecelist)
                     case 7:

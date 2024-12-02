@@ -28,10 +28,11 @@ def handle_not_interested(bee: Bee, msg):
 
 def handle_have(bee: Bee, msg):
     piece_idx = int.from_bytes(msg[1:5:1])
-    bee.bitfield.set(True, piece_idx)
+    bee.set_bitfield_at_index(piece_index, True)
 
-def handle_bitfield():
-    print("No support for bitfield requests") # TODO: probably can implement this fairly easily, need decide if we need to send back a "can't do this" message if not
+def handle_bitfield(bee: Bee, msg):
+    bee.update_bitfield_from_received_bitfield(msg[1:])
+    print(bee.bitfield)
 
 def handle_request(bee: Bee, msg, piecelist: PieceList):
     idx = int.from_bytes(msg[1:5:1], byteorder="big")
