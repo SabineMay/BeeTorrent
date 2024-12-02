@@ -6,7 +6,10 @@ import socket
 def send_message_tcp(msg, sock):
     total_sent = 0
     while total_sent < len(msg):
-        sent = sock.send(msg[total_sent:])
+        try:
+            sent = sock.send(msg[total_sent:])
+        except:
+            raise SocketDisconnected("socket disconnected during recv")
         if sent == 0:
             raise SocketDisconnected("socket disconnected during send")
         total_sent = total_sent + sent
@@ -16,7 +19,10 @@ def recv_message_tcp(sock, size):
     total_recv = 0
     msg = b''
     while total_recv < size:
-        received = sock.recv(size - total_recv)
+        try:
+            received = sock.recv(size - total_recv)
+        except:
+            raise SocketDisconnected("socket disconnected during recv")
         if received == b'':
             raise SocketDisconnected("socket disconnected during recv")
         msg += received
