@@ -82,7 +82,12 @@ class PieceList:
                 return False
             
         self.output_file.seek((piece_idx * self.piece_length), 0)
-        if (hashlib.sha1(self.output_file.read(self.piece_length)) == self.hashes[piece_idx]):
+
+        h = hashlib.sha1()
+
+        h.update(self.output_file.read(self.piece_length))
+
+        if (h.digest() == self.hashes[piece_idx]):
             self.pieces[piece_idx] = PieceList.Status.RESOLVED
             return True
         
@@ -103,19 +108,6 @@ class PieceList:
                         return True
                     block_idx += 1
             piece_idx += 1
-        
-    def get_random_block(self):
-        block_idx = random.randint(0, len(self.blocks))
-
-        if self.blocks[block_idx] == PieceList.Status.RECEIVED:
-            while block_idx < len(self.blocks):
-                if self.blocks[block_idx] != PieceList.Status.RECEIVED:
-                    return block_idx
-                block_idx += 1
-        else:
-            return block_idx
-
-
 
     # Returns True if status of piece is RESOLVED
     def is_resolved(self, piece_idx):
@@ -136,6 +128,8 @@ class PieceList:
             if block_idx >= self.blocks_per_piece:
                 piece_idx += 1
                 block_idx = 0
+        
+        return (-1, -1)
 
     
     

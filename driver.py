@@ -53,7 +53,7 @@ def main():
     torrent_file_path = TORRENT_FILE_PATH
     torrent_name_list = torrent_file_path.split("/")
     output_file_name = (torrent_name_list[len(torrent_name_list) - 1].split("."))[0] + "_bytes"
-    output_file = open(output_file_name, "wb")
+    output_file = open(output_file_name, "w+b")
     
     
     # used to poll over peer sockets 
@@ -97,8 +97,21 @@ def main():
     
     output_file_length = 0
     piece_length = info_dict["piece length"]
-    hashes = info_dict["pieces"]
-    
+    hashes = []
+
+    # hashes are returned as 1 giant bytestring instead of a list of bytestrings
+    # so transform it into a list of bytestrings
+    current = b''
+    i = 0
+    for byte in info_dict["pieces"]:
+        current += byte.to_bytes(1)
+        i += 1
+        if i >= 20:
+            hashes.append(current)
+            current = b''
+            i = 0
+
+
     if "files" in info_dict: 
         # mult-file 
         for file_dict in info_dict["files"]:
@@ -198,13 +211,12 @@ def main():
     piecelist = PieceList(num_pieces, piece_length, blocks_per_piece, block_length, output_file, hashes)
     output_file.write(b'\x00' * output_file_length)
     
+    
     def handle_msg(prefix_len, bee):
-        print("in handle_msg, pl " + str(prefix_len))
         try:
             if (prefix_len == 0):
                 handle_keepalive(bee)
             else: 
-                print("in here")
                 msg = recv_message_tcp(bee.sock, prefix_len)
                 match (msg[0]):
                     case 0: 
@@ -290,9 +302,7 @@ def main():
                 else: 
                     try:
                         msg = recv_message_tcp(curr.sock, 4)
-                        print("received message from " + bee.to_string())
                         prefix_len = int.from_bytes(msg, byteorder="big")
-                        print("prefix len " + str(prefix_len))
                         handle_msg(prefix_len, curr)
                     except SocketDisconnected as e:
                         # if we run into an error when receiving a message from the bee
@@ -327,13 +337,24 @@ def main():
             
         
         # next, request pieces that we're interested in
+        # TODO: get a better strategy than just requesting the next needed block.
+        # once we do that, we should adjust MAX_PENDING_REQUESTS to smth else
         for bee in swarm:
             if bee.me_interested and not bee.me_choked and bee.num_pending_requests_sent < MAX_PENDING_REQUESTS:
+                # returns next block that hasn't been RECEIVED, we should pick
+                # a better strategy
                 (piece_idx, block_idx) = piecelist.next_needed_block()
-                send_message_tcp(construct_request_msg(piece_idx, block_idx * piecelist.block_length, piecelist.block_length), bee.sock)
-                piecelist.request(piece_idx, block_idx)
-                print("requested " + str(piece_idx) + ", " + str(block_idx))
-                bee.num_pending_requests_sent += 1
+
+                if piece_idx == -1 and block_idx == -1:
+                    # TODO pick what to do once we get the whole file
+                    pass
+                else:
+                    block_length = piecelist.block_length
+                    if block_idx == piecelist.blocks_per_piece - 1:
+                        block_length = piecelist.piece_length - (block_length * (piecelist.blocks_per_piece - 1))
+                    send_message_tcp(construct_request_msg(piece_idx, block_idx * piecelist.block_length, block_length), bee.sock)
+                    piecelist.request(piece_idx, block_idx)
+                    bee.num_pending_requests_sent += 1
 
 
         
