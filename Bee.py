@@ -34,7 +34,7 @@ class Bee: # part of the swarm
         self.num_requests = 0
     
     def __eq__(self, other):
-        if (self.addr == other.addr): # potential issue: is this the correct way to check for tuple equality
+        if (other != None and self.addr == other.addr): # potential issue: is this the correct way to check for tuple equality
             return True
         
         return False

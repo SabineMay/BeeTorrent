@@ -1,3 +1,4 @@
 * get rid of raise runtime errors in things like send_msg_tcp bc we don't want entire program to fail during demonstration if one peer gets dropped
 * pass peerid calculated at beginning of main into create_torrent_get_request_from_file so that we can send it into tracker
 * verify that we are properly using %nn escaping for peerid and infohash --> could this be related to why some peers are dropping our connection?
+* setup bitmap and send that to peers upon handshake

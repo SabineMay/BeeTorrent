@@ -168,6 +168,7 @@ def main():
             try:
                 send_handshake(newbie.sock, info_hash, myid)
                 recv_handshake(newbie.sock)
+                print(info_hash)
                 print("Sucesfully connected to peer " + str(newbie.addr) + "\n")
                 newbie.sock.setblocking(False) 
                 swarm.append(newbie)
@@ -184,10 +185,12 @@ def main():
     for bee in swarm: 
         send_message_tcp(choke_msg, bee.sock)
         send_message_tcp(not_interested_msg, bee.sock)
+        sel.register(bee.sock, selectors.EVENT_READ)
         print(bee.to_string())
     
     auction_clock = time.monotonic() # 10 seconds should elapse before every non-optimistic choke/unchoke
     charity_clock = time.monotonic() # 30 seconds should elapse before every optimistic unchokex
+    keep_alive_clock = time.monotonic() # Clock to keep track of when we should send keepalives
     tracker_clock = time.monotonic() # interval seconds should elapse before we update tracker with our status and how much we've downloaded/uploaded
     
     # Begin main logic to handle never-ending byte stream of <prefix_len><msg>
@@ -199,7 +202,8 @@ def main():
             handle_keepalive(bee)
         else: 
             msg = recv_message_tcp(bee.sock, prefix_len)
-            match (msg[5]):
+            print(msg)
+            match (msg[0]):
                 case 0: 
                     handle_choke(bee, msg)
                 case 1:
@@ -226,7 +230,7 @@ def main():
                 case 9:
                     handle_port()
                 case _: 
-                    print("Peer message received with unkown ID " + msg[5])
+                    print("Peer message received with unkown ID " + str(msg[5]))
     
     
     while(True):
@@ -259,8 +263,9 @@ def main():
             # getting a message from a peer on an already-established socket
             else: 
                 curr = None
+
                 for bee in swarm: 
-                    if (key.fd == bee.sock): # potential problem: is this the right way to check equality of tuples?
+                    if (key.fd == bee.sock.fileno()): # potential problem: is this the right way to check equality of tuples?
                         bee.reset_clock()
                         curr = bee
                         break
@@ -272,20 +277,31 @@ def main():
                     msg = recv_message_tcp(curr.sock, 4)
                     prefix_len = int.from_bytes(msg[0:5:1], byteorder="big")
                     handle_msg(prefix_len, curr)
+                    
                 
         for bee in swarm: 
             if (bee.get_time_elapsed() > 120): # 2 minutes since last message
                 sel.unregister(bee.sock)
                 swarm.remove(bee)
+
                 
         curr_time = time.monotonic()
+
+        if curr_time - keep_alive_clock >= 30:
+            for bee in swarm:
+                send_message_tcp(keep_alive_msg, bee.sock)
+            keep_alive_clock = time.monotonic()
 
         if (curr_time - auction_clock >= 10):
             # recalculate top 4 interested uploaders 
             auction_clock = time.monotonic() # reset clock
 
         if (curr_time - charity_clock >= 30):
+            print("unchoking")
             # optimistically unchoke a new person 
+            unchoke_peer = random.choice(swarm)
+            # Check if peer is already unchoked
+            send_message_tcp(unchoke_msg, unchoke_peer.sock)
             charity_clock = time.monotonic() # reset clock
 
 

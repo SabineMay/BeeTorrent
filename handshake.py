@@ -12,9 +12,8 @@ def send_handshake(socket, info_hash, peer_id):
     send_message_tcp(peer_id, socket)
 
 
-
-
-
 def recv_handshake(socket):
     msg = recv_message_tcp(socket, 68)
-    print(msg)
+    #print(msg)
+
+
