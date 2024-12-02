@@ -1,5 +1,6 @@
 from enum import Enum
 import hashlib
+import random
 
 """
 Class that tracks which pieces we have hash-verified, and which blocks we have received.
@@ -27,7 +28,7 @@ class PieceList:
         self.pieces = [PieceList.Status.UNRESOLVED] * _num_pieces
         
         # keeps track of which blocks still need to be requested (READY), have been requested (REQUESTED), and were succesfully received (RECEIVED)
-        self.blocks = [PieceList.Status.RESOLVED] * _blocks_per_piece * _num_pieces
+        self.blocks = [PieceList.Status.READY] * _blocks_per_piece * _num_pieces
         
         self.num_pieces = _num_pieces
         self.piece_length = _piece_length
@@ -40,33 +41,33 @@ class PieceList:
     
     # Update status of block to REQUESTED
     def request(self, piece_idx, block_idx):
-        self.blocks[piece_idx * _blocks_per_piece + block_idx] = PieceList.Status.REQUESTED
+        self.blocks[piece_idx * self.blocks_per_piece + block_idx] = PieceList.Status.REQUESTED
     
     # Update status of block to READY
     def ready(self, piece_idx, block_idx):
-        self.blocks[piece_idx * _blocks_per_piece + block_idx] = PieceList.Status.READY
+        self.blocks[piece_idx * self.blocks_per_piece + block_idx] = PieceList.Status.READY
     
     # Update status of bock to RECEIVED, and attempt to 
     # resolve the piece that the block is a part of
     def receive(self, piece_idx, block_idx):
-        self.blocks[piece_idx * _blocks_per_piece + block_idx] = PieceList.Status.RECEIVED
+        self.blocks[piece_idx * self.blocks_per_piece + block_idx] = PieceList.Status.RECEIVED
         self.attempt_resolve(piece_idx)
     
     # Returns True if status of block is REQUESTED
     def is_requested(self, piece_idx, block_idx):
-        if (self.blocks[piece_idx * _blocks_per_piece + block_idx] == PieceList.Status.REQUESTED):
+        if (self.blocks[piece_idx * self.blocks_per_piece + block_idx] == PieceList.Status.REQUESTED):
             return True
         return False
     
     # Returns True if status of block is READY
     def is_ready(self, piece_idx, block_idx):
-        if (self.blocks[piece_idx * _blocks_per_piece + block_idx] == PieceList.Status.READY):
+        if (self.blocks[piece_idx * self.blocks_per_piece + block_idx] == PieceList.Status.READY):
             return True
         return False
     
     # Returns True if status of block is RECEIVED
     def is_received(self, piece_idx, block_idx):
-        if (self.blocks[piece_idx * _blocks_per_piece + block_idx] == PieceList.Status.RECEIVED):
+        if (self.blocks[piece_idx * self.blocks_per_piece + block_idx] == PieceList.Status.RECEIVED):
             return True
         return False
     
@@ -82,17 +83,59 @@ class PieceList:
             
         self.output_file.seek((piece_idx * self.piece_length), 0)
         if (hashlib.sha1(self.output_file.read(self.piece_length)) == self.hashes[piece_idx]):
+            self.pieces[piece_idx] = PieceList.Status.RESOLVED
             return True
         
         for block_idx in range(self.blocks_per_piece):
             self.ready(piece_idx, block_idx)
             
         return False
-    
+
+    # takes a bees bitfield and checks if any of the blocks in any of the pieces that bee has
+    # are blocks that we haven't received yet
+    def check_interest(self, bitfield):
+        piece_idx = 0
+        for piece in bitfield:
+            block_idx = 0
+            if piece == True:
+                while block_idx < self.blocks_per_piece:
+                    if self.blocks[piece_idx * self.blocks_per_piece + block_idx] != PieceList.Status.RECEIVED:
+                        return True
+                    block_idx += 1
+            piece_idx += 1
+        
+    def get_random_block(self):
+        block_idx = random.randint(0, len(self.blocks))
+
+        if self.blocks[block_idx] == PieceList.Status.RECEIVED:
+            while block_idx < len(self.blocks):
+                if self.blocks[block_idx] != PieceList.Status.RECEIVED:
+                    return block_idx
+                block_idx += 1
+        else:
+            return block_idx
+
+
+
     # Returns True if status of piece is RESOLVED
     def is_resolved(self, piece_idx):
         if (self.pieces[piece_idx] == PieceList.Status.RESOLVED):
             return True
         return False
+
+    def next_needed_block(self):
+        block_idx = 0
+        piece_idx = 0
+
+        while (piece_idx * self.blocks_per_piece) + block_idx < len(self.blocks):
+            if self.blocks[(piece_idx * self.blocks_per_piece) + block_idx] != PieceList.Status.RECEIVED:
+                return (piece_idx, block_idx)
+            
+            block_idx += 1
+
+            if block_idx >= self.blocks_per_piece:
+                piece_idx += 1
+                block_idx = 0
+
     
     

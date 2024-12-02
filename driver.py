@@ -14,7 +14,8 @@ from PieceList import PieceList
 
 from bcoding import bencode, bdecode
 
-TORRENT_FILE_PATH = 'tor-file-examples/kali-linux.torrent'
+TORRENT_FILE_PATH = 'tor-file-examples/cosmos-laundromat.torrent'
+MAX_PENDING_REQUESTS = 1
 
 def main():
     """
@@ -198,10 +199,12 @@ def main():
     output_file.write(b'\x00' * output_file_length)
     
     def handle_msg(prefix_len, bee):
+        print("in handle_msg, pl " + str(prefix_len))
         try:
             if (prefix_len == 0):
                 handle_keepalive(bee)
             else: 
+                print("in here")
                 msg = recv_message_tcp(bee.sock, prefix_len)
                 match (msg[0]):
                     case 0: 
@@ -225,6 +228,7 @@ def main():
                             # keep track of who uploaded us the most number of blocks (all block sizes are the same,
                             # except for irregular blocks at the end of pieces, so estimate by counting by number of blocks)
                             bee.blocks_uploaded += 1
+                        bee.num_pending_requests_sent -= 1
                     case 8:
                         handle_cancel(bee, msg)
                     case 9:
@@ -232,7 +236,7 @@ def main():
                     case _: 
                         print("Peer message received with unkown ID " + str(msg[5]))
         except SocketDisconnected as e:
-            log_error(Exception("Error in handle_msg: " + str(e)))
+            log_error(Exception("Error in handle_msg with " + bee.to_string() + ": " + str(e)))
     
     
     while(True):
@@ -286,15 +290,17 @@ def main():
                 else: 
                     try:
                         msg = recv_message_tcp(curr.sock, 4)
-                        prefix_len = int.from_bytes(msg[0:5:1], byteorder="big")
+                        print("received message from " + bee.to_string())
+                        prefix_len = int.from_bytes(msg, byteorder="big")
+                        print("prefix len " + str(prefix_len))
                         handle_msg(prefix_len, curr)
                     except SocketDisconnected as e:
                         # if we run into an error when receiving a message from the bee
                         # then remove the bee from the swarm
                         log_error(Exception("Exception when receiving message from " + curr.to_string() + ": " + str(e)))
                         print("Error receiving a message from " + curr.to_string() + ", removing from the swarm")
-                        sel.unregister(bee.sock)
-                        swarm.remove(bee)
+                        sel.unregister(curr.sock)
+                        swarm.remove(curr)
                         num_bees -= 1
                     
                 
@@ -303,7 +309,34 @@ def main():
                 sel.unregister(bee.sock)
                 swarm.remove(bee)
                 num_bees -= 1
+        
+        # first, check the bees that have pieces we're interested in
+        for bee in swarm:
+            try:
+                if piecelist.check_interest(bee.bitfield):
+                    if not bee.me_interested:
+                        send_message_tcp(interested_msg, bee.sock)
+                        bee.me_interested = True
+                else:
+                    if bee.me_interested:
+                        send_message_tcp(not_interested_msg, bee.sock)
+                        bee.me_interested = False
+            except SocketDisconnected as e:
+                log_error(Exception("Exception when sending interested message to " + bee.to_string() + ": " + str(e)))
+                print("Error sending interested message to " + bee.to_string())
+            
+        
+        # next, request pieces that we're interested in
+        for bee in swarm:
+            if bee.me_interested and not bee.me_choked and bee.num_pending_requests_sent < MAX_PENDING_REQUESTS:
+                (piece_idx, block_idx) = piecelist.next_needed_block()
+                send_message_tcp(construct_request_msg(piece_idx, block_idx * piecelist.block_length, piecelist.block_length), bee.sock)
+                piecelist.request(piece_idx, block_idx)
+                print("requested " + str(piece_idx) + ", " + str(block_idx))
+                bee.num_pending_requests_sent += 1
 
+
+        
                 
         curr_time = time.monotonic()
 

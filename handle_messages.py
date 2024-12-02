@@ -44,7 +44,7 @@ def handle_request(bee: Bee, msg, piecelist: PieceList):
     elif (piecelist.is_resolved(idx)): 
         print("Request answered -- peer is unchoked and we have the piece\n")
         piecelist.output_file.seek((idx * PieceList.piece_length) + begin, 0)
-        send_message_tcp(construct_request_msg(idx, begin, piecelist.output_file.read(length)), bee.sock)
+        send_message_tcp(construct_have_msg(idx, begin, piecelist.output_file.read(length)), bee.sock)
     else:
         print("Request refused -- peer is unchoked but we don't have the piece\n")
         # question: peers should only request pieces we have, but if they don't...
@@ -55,24 +55,26 @@ def handle_piece(bee: Bee, msg, X, piecelist: PieceList):
         print("Peer gave us an incorrectly-sized block\n")
         
     else: 
+        print("handling piece")
+
         piece_idx = int.from_bytes(msg[1:5:1], byteorder="big")
         begin = int.from_bytes(msg[5:9:1], byteorder="big")
         
         # potential problem: need to check my math here
-        # block_idx = min((begin // piecelist.block_length), piecelist.blocks_per_piece - 1)
-        block_idx = begin % piecelist.block_length
+        block_idx = min((begin // piecelist.block_length), piecelist.blocks_per_piece - 1)
+        # block_idx = begin // piecelist.block_length
 
         if (piecelist.is_resolved(piece_idx)):
             print("Got a block for a piece that we already hash-verified\n")
         elif(piecelist.is_received(piece_idx, block_idx)):
-            print("Got a block that we already received\n")
+            print("Got a block that we already received: \n")
         elif (piecelist.is_requested(piece_idx, block_idx)):
-            block = msg[9:X:1]
+            block = msg[9:]
             piecelist.output_file.seek((piece_idx * piecelist.piece_length) + begin, 0)
             piecelist.output_file.write(block)
             
             # TODO: verify that we are sent back a block we actually asked for before we recieve it
-            piecelist.receive(idx, block_idx) 
+            piecelist.receive(piece_idx, block_idx) 
 
             # TODO: maybe send out cancels?
             # interesting question bc this piece message might only be giving us a block and not a whole piece 
