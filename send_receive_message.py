@@ -9,7 +9,7 @@ def send_message_tcp(msg, sock):
         try:
             sent = sock.send(msg[total_sent:])
         except:
-            raise SocketDisconnected("socket disconnected during recv")
+            raise SocketDisconnected("socket disconnected during send")
         if sent == 0:
             raise SocketDisconnected("socket disconnected during send")
         total_sent = total_sent + sent

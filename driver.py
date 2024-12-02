@@ -14,7 +14,7 @@ from PieceList import PieceList
 
 from bcoding import bencode, bdecode
 
-TORRENT_FILE_PATH = 'tor-file-examples/cosmos-laundromat.torrent'
+TORRENT_FILE_PATH = 'tor-file-examples/kali-linux.torrent'
 
 def main():
     """
@@ -49,7 +49,7 @@ def main():
 
     
     # make and/or clear file to hold our single torrent-file answer
-    torrent_file_path = "tor-file-examples/cosmos-laundromat.torrent"
+    torrent_file_path = TORRENT_FILE_PATH
     torrent_name_list = torrent_file_path.split("/")
     output_file_name = (torrent_name_list[len(torrent_name_list) - 1].split("."))[0] + "_bytes"
     output_file = open(output_file_name, "wb")
@@ -243,6 +243,8 @@ def main():
             # getting a connect() message from a peer
             if (key.fd == listen_sock): 
                 addr, sock = key.fd.accept()
+
+                print("connect message received")
             
                 curr = None
                 
@@ -256,10 +258,17 @@ def main():
                     
                 if (curr == None):
                     print("Got a message from an peer that we didn't see in the tracker, attempting to handshake\n")
-                    # do handhsake
-                    # delete peer and close socket if handshake failed
-                    sel.register(sock, selectors.EVENT_READ)
-                    bee.sock = sock
+                    try:
+                        recv_handshake(sock)
+                        send_handshake(sock, info_hash, myid)
+                        # delete peer and close socket if handshake failed
+                        sel.register(sock, selectors.EVENT_READ)
+                        newbie = Bee(num_pieces)
+                        newbie.sock = sock
+                        swarm.append(newbie)
+                        num_bees += 1
+                    except SocketDisconnected as e:
+                        log_error(Exception("Exception when handshaking with a bee that was not in the tracker: " + str(e)))
                     
             
             # getting a message from a peer on an already-established socket
@@ -286,12 +295,14 @@ def main():
                         print("Error receiving a message from " + curr.to_string() + ", removing from the swarm")
                         sel.unregister(bee.sock)
                         swarm.remove(bee)
+                        num_bees -= 1
                     
                 
         for bee in swarm: 
             if (bee.get_time_elapsed() > 120): # 2 minutes since last message
                 sel.unregister(bee.sock)
                 swarm.remove(bee)
+                num_bees -= 1
 
                 
         curr_time = time.monotonic()
