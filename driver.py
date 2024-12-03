@@ -252,7 +252,7 @@ def main():
         except SocketDisconnected as e:
             log_error(Exception("Error in handle_msg with " + bee.to_string() + ": " + str(e)))
     
-    
+    rarest_list = []
     while(True):
         events = sel.select(timeout = 5) # potential issue: need to adjust timeout based on how much time left on auction/tracker/charity clocks
         
@@ -324,6 +324,9 @@ def main():
         
         # first, check the bees that have pieces we're interested in
         for bee in swarm:
+            if (rarest_list == []):
+                rarest_list = get_rarest_list(swarm)
+                print(rarest_list)
             try:
                 if piecelist.check_interest(bee.bitfield):
                     if not bee.me_interested:

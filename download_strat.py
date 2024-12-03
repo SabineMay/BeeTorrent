@@ -9,7 +9,6 @@ def get_rarest_list(swarm):
     peers_have = [0] * num_pieces
 
     for bee in swarm:
-        print(bee.bitfield)
         i = 0
         while i < num_pieces:
             if (bee.bitfield[i]):
