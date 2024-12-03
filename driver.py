@@ -11,7 +11,7 @@ from construct_messages import *
 from handle_messages import *
 import math
 from PieceList import PieceList
-
+from operator import itemgetter
 from bcoding import bencode, bdecode
 
 TORRENT_FILE_PATH = 'tor-file-examples/cosmos-laundromat.torrent'
@@ -368,10 +368,20 @@ def main():
 
         if (curr_time - auction_clock >= 10):
             # recalculate top 4 interested uploaders 
+            scoreboard = []
+            for bee in swarm:
+                scoreboard.append((bee, bee.blocks_uploaded))
+            
+            scoreboard.sort(key=itemgetter(1), reverse=True)
+
+            i = 0
+            while i < 4:
+                send_message_tcp(unchoke_msg, (scoreboard[i])[0].sock)
+                i += 1
+
             auction_clock = time.monotonic() # reset clock
 
         if (curr_time - charity_clock >= 30):
-            print("unchoking")
             # optimistically unchoke a new person 
             unchoke_peer = random.choice(swarm)
             # Check if peer is already unchoked

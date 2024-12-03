@@ -82,6 +82,9 @@ def handle_piece(bee: Bee, msg, X, piecelist: PieceList):
             # interesting question bc this piece message might only be giving us a block and not a whole piece 
             # -- should we keep other requests that we already sent because they  might give us different parts of the
             # piece? 
+
+            # Increment Bee Score
+            bee.blocks_uploaded += 1
         elif (piecelist.is_ready(piece_idx, block_idx)):
             print("Got a piece that we didn't advertise for, or that has an incorrent status in piecelist")
 

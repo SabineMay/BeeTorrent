@@ -11,6 +11,8 @@ def send_message_tcp(msg, sock):
         except BlockingIOError as e:
             # if the socket is temporarily unavailable, wait until its fine
             continue
+        except:
+            raise SocketDisconnected("socket disconnected during send")
         if sent == 0:
             raise SocketDisconnected("socket disconnected during send")
         total_sent = total_sent + sent
@@ -25,6 +27,8 @@ def recv_message_tcp(sock, size):
         except BlockingIOError as e:
             # if the socket is temporarily unavailable, wait until its fine
             continue
+        except:
+            raise SocketDisconnected("socket disconnected during send")
         if received == b'':
             raise SocketDisconnected("socket disconnected during recv")
         msg += received
