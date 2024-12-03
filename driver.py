@@ -169,7 +169,7 @@ def main():
                 send_handshake(newbie.sock, info_hash, myid)
                 recv_handshake(newbie.sock)
                 #print(info_hash)
-                print("Sucesfully connected to peer " + str(newbie.addr) + "\n")
+                print("Succesfully connected to peer " + str(newbie.addr) + "\n")
                 newbie.sock.setblocking(False) 
                 swarm.append(newbie)
                 num_bees += 1
@@ -203,6 +203,7 @@ def main():
                 handle_keepalive(bee)
             else: 
                 msg = recv_message_tcp(bee.sock, prefix_len)
+                print(msg)
                 match (msg[0]):
                     case 0: 
                         handle_choke(bee, msg)
@@ -242,12 +243,12 @@ def main():
             
             # getting a connect() message from a peer
             if (key.fd == listen_sock): 
-                addr, sock = key.fd.accept()
+                sock, (ip, portnum) = key.fd.accept()
             
                 curr = None
                 
                 for bee in swarm: 
-                    if (bee.addr == addr): # potential problem: is this the right way to check equality of tuples?
+                    if (bee.addr == (ip, portnum)): # potential problem: is this the right way to check equality of tuples?
                         print("Peer tried to establish duplicate connection with me")
                         sock.close()
                         bee.reset_clock()
@@ -258,8 +259,19 @@ def main():
                     print("Got a message from an peer that we didn't see in the tracker, attempting to handshake\n")
                     # do handhsake
                     # delete peer and close socket if handshake failed
-                    sel.register(sock, selectors.EVENT_READ)
-                    bee.sock = sock
+                    try: 
+                        newbie = Bee(num_pieces)
+                        send_handshake(sock, info_hash, myid)
+                        pid = recv_handshake_incoming(sock)
+                        newbie.set_id(pid, ip, portnum)
+                        sock.setblocking(False) 
+                        newbie.sock = sock
+                        swarm.append(newbie)
+                        num_bees += 1
+                        sel.register(sock, selectors.EVENT_READ)
+                    except Exception as e:
+                        print("Failed to handshake with peer " + str(newbie.addr) + "\n")
+                        log_error(Exception("Failed handshake with " + str(newbie.addr) +  ": " + str(e)))
                     
             
             # getting a message from a peer on an already-established socket
@@ -306,12 +318,16 @@ def main():
             auction_clock = time.monotonic() # reset clock
 
         if (curr_time - charity_clock >= 30):
-            print("unchoking")
             # optimistically unchoke a new person 
             unchoke_peer = random.choice(swarm)
             # Check if peer is already unchoked
             send_message_tcp(unchoke_msg, unchoke_peer.sock)
             charity_clock = time.monotonic() # reset clock
+
+        for bee in swarm:
+            if (not bee.me_choked):
+                #send_message_tcp(interested_msg, bee.sock)
+                pass
 
 
 if __name__=="__main__":

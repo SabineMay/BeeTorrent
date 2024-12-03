@@ -16,4 +16,7 @@ def recv_handshake(socket):
     msg = recv_message_tcp(socket, 68)
     #print(msg)
 
-
+# Used for incoming connections we didn't know in the tracker, returns peerid
+def recv_handshake_incoming(socket):
+    msg = recv_message_tcp(socket, 68)
+    return msg[48:68]
