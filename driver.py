@@ -375,9 +375,10 @@ def main():
             scoreboard.sort(key=itemgetter(1), reverse=True)
 
             i = 0
-            while i < 4 or i < len(scoreboard):
+            while i < 4 and i < len(scoreboard):
                 send_message_tcp(unchoke_msg, (scoreboard[i])[0].sock)
                 (scoreboard[i])[0].peer_choked = 0
+                
                 i += 1
 
             auction_clock = time.monotonic() # reset clock
