@@ -13,6 +13,7 @@ import math
 from PieceList import PieceList
 from operator import itemgetter
 from bcoding import bencode, bdecode
+from download_strat import *
 
 TORRENT_FILE_PATH = 'tor-file-examples/cosmos-laundromat.torrent'
 MAX_PENDING_REQUESTS = 1
@@ -210,6 +211,7 @@ def main():
     # Begin main logic to handle never-ending byte stream of <prefix_len><msg>
     piecelist = PieceList(num_pieces, piece_length, blocks_per_piece, block_length, output_file, hashes)
     output_file.write(b'\x00' * output_file_length)
+
     
     
     def handle_msg(prefix_len, bee):
@@ -378,7 +380,6 @@ def main():
             while i < 4 and i < len(scoreboard):
                 send_message_tcp(unchoke_msg, (scoreboard[i])[0].sock)
                 (scoreboard[i])[0].peer_choked = 0
-                
                 i += 1
 
             auction_clock = time.monotonic() # reset clock
