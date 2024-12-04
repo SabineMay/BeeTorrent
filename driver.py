@@ -14,11 +14,13 @@ from PieceList import PieceList
 from operator import itemgetter
 from bcoding import bencode, bdecode
 from download_strat import *
+import os
 
-TORRENT_FILE_PATH = 'tor-file-examples/audacity-win-3.7.0-64bit.exe.torrent'
+TORRENT_FILE_PATH = 'tor-file-examples/cosmos-laundromat.torrent'
 MAX_PENDING_REQUESTS = 5
 
 def main():
+    done = False
     """
     Add some comments here detailing what variables we are keeping to maintain our own state and
     the state of our peers.
@@ -318,8 +320,10 @@ def main():
                         dead_swarm.append(curr)
                         num_bees -= 1
                     
-                
-        for bee in swarm: 
+        
+        # iterate through a copy of swarm so we aren't potentially
+        # removing elements from the same list we are iterating through
+        for bee in list(swarm): 
             if (bee.get_time_elapsed() > 120): # 2 minutes since last message
                 sel.unregister(bee.sock)
                 swarm.remove(bee)
@@ -348,7 +352,7 @@ def main():
         # next, request pieces that we're interested in
         # TODO: get a better strategy than just requesting the next needed block.
         # once we do that, we should adjust MAX_PENDING_REQUESTS to smth else
-        for bee in swarm:
+        for bee in list(swarm):
             if bee.me_interested and not bee.me_choked and bee.num_pending_requests_sent < MAX_PENDING_REQUESTS:
                 piece_idx = get_rarest_piece_needed(bee, piecelist, rarest_list)
                 block_idx = -1
@@ -400,8 +404,15 @@ def main():
 
         if curr_time - keep_alive_clock >= 30:
             
-            for bee in swarm:
-                send_message_tcp(keep_alive_msg, bee.sock)
+            for bee in list(swarm):
+                try:
+                    send_message_tcp(keep_alive_msg, bee.sock)
+                except SocketDisconnected as e:
+                    sel.unregister(bee.sock)
+                    swarm.remove(bee)
+                    dead_swarm.append(bee)
+                    num_bees -= 1
+
             keep_alive_clock = time.monotonic()
 
         if (curr_time - auction_clock >= 10):
@@ -429,7 +440,7 @@ def main():
             unchoke_peer.peer_choked = 0
             charity_clock = time.monotonic() # reset clock
 
-            for corpse in dead_swarm:
+            for corpse in list(dead_swarm):
                 corpse.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 corpse.sock.settimeout(1)
                 
@@ -451,6 +462,7 @@ def main():
                         #print(info_hash)
                         print("Sucesfully connected to peer " + str(corpse.addr) + "\n")
                         corpse.sock.setblocking(False) 
+                        sel.register(corpse.sock, selectors.EVENT_READ)
                         swarm.append(corpse)
                         dead_swarm.remove(corpse)
                         num_bees += 1
@@ -464,7 +476,24 @@ def main():
 
         if piecelist.num_pieces_resolved == piecelist.num_pieces:
             print("Done")
+            done = True
             break
+
+    if done:
+        if "files" in info_dict: 
+            output_file.seek(0, 0)
+            # mult-file 
+            for file_dict in info_dict["files"]:
+                f = open(file_dict["path"], "wb")
+                f.write(output_file.read(file_dict["length"]))
+                f.close()
+            output_file.close()
+        else: 
+            # single file
+            output_file.close()
+            os.rename(output_file_name, info_dict["name"])
+
+
 
 
 if __name__=="__main__":
