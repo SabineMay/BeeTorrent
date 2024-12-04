@@ -254,7 +254,7 @@ def main():
     
     rarest_list = []
     while(True):
-        events = sel.select(timeout = 5) # potential issue: need to adjust timeout based on how much time left on auction/tracker/charity clocks
+        events = sel.select(timeout = 1) # potential issue: need to adjust timeout based on how much time left on auction/tracker/charity clocks
         
         for key, mask in events: 
             
@@ -326,7 +326,7 @@ def main():
         for bee in swarm:
             if (rarest_list == []):
                 rarest_list = get_rarest_list(swarm)
-                print(rarest_list)
+                #print(rarest_list)
             try:
                 if piecelist.check_interest(bee.bitfield):
                     if not bee.me_interested:
@@ -353,7 +353,7 @@ def main():
                     block_length = piecelist.block_length
                     if block_idx == piecelist.blocks_per_piece - 1:
                         block_length = piecelist.piece_length - (block_length * (piecelist.blocks_per_piece - 1))
-                    #print(piece_idx, block_idx)
+                    print(piece_idx, block_idx)
                     send_message_tcp(construct_request_msg(piece_idx, block_idx * piecelist.block_length, block_length), bee.sock)
                     piecelist.request(piece_idx, block_idx)
                     bee.num_pending_requests_sent += 1

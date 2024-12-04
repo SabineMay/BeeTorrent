@@ -137,6 +137,11 @@ class PieceList:
         else:
             i = 0
             while i < self.blocks_per_piece:
+                if (self.blocks[(piece_idx * self.blocks_per_piece) + i] != PieceList.Status.RECEIVED) and (self.blocks[(piece_idx * self.blocks_per_piece) + i] != PieceList.Status.REQUESTED):
+                    return i
+                i += 1
+            i = 0
+            while i < self.blocks_per_piece:
                 if (self.blocks[(piece_idx * self.blocks_per_piece) + i] != PieceList.Status.RECEIVED):
                     return i
                 i += 1
