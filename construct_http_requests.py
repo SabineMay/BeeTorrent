@@ -23,6 +23,7 @@ def construct_GET_request(host_domain, host_port, path):
     request += accept_encoding_line
 
     request += HTTP_LINE_END
+    print(request)
 
     return request.encode()
 

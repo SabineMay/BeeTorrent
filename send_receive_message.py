@@ -49,7 +49,7 @@ def recv_http_response(sock):
     next_string = recv_message_tcp(sock, 8).decode()
 
     if (next_string != "200 OK\r\n"):
-        raise UnexpectedPacket("received non-200 response in recv_http_response")
+        raise UnexpectedPacket(f"received non-200 response in recv_http_response: {next_string}")
     
     http_response += next_string
 
@@ -81,4 +81,45 @@ def recv_http_response(sock):
     # receive the body of the response
     http_body = recv_message_tcp(sock, content_length)
 
+    if ("Transfer-Encoding: chunked" in http_response):
+        # Chunked response, more complicated recv procedure
+        http_body = recv_chunked_response(sock)
+
+    print(http_response)
+
     return http_body
+
+def recv_chunked_response(sock):
+    response_body = b""
+
+    while True:
+        # Read chunk size
+        chunk_size_hex = read_until(sock, b"\r\n")
+
+        try:
+            chunk_size = int(chunk_size_hex, 16)
+        except ValueError:
+            raise ValueError(f"Invalid chunk size: {chunk_size_hex}")
+        
+        # signifies end of chunks of data
+        if chunk_size == 0:
+            break
+
+        chunk_data = sock.recv(chunk_size)
+
+        response_body += chunk_data
+
+        # skip over CRLF
+        sock.recv(2)
+    
+    return response_body
+
+def read_until(sock, delim: str):
+    data = b""
+    while True:
+        byte = sock.recv(1)
+        data += byte
+        if data.endswith(delim):
+            break
+    return data[:-(len(delim))]
+

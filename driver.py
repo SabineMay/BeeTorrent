@@ -14,7 +14,7 @@ from PieceList import PieceList
 
 from bcoding import bencode, bdecode
 
-TORRENT_FILE_PATH = 'tor-file-examples/kali-linux.torrent'
+TORRENT_FILE_PATH = 'tor-file-examples/matt_mcgue.torrent'
 
 def main():
     """
