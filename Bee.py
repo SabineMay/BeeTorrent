@@ -16,10 +16,11 @@ class Bee: # part of the swarm
         # Will almost certaintly be the former given that we're behind a firwall
         self.sock = None
         
-        self.peer_interested = False
-        self.peer_choked = True
-        self.me_interested = False
-        self.me_choked = True
+        # Note: the notation here is slightly different than what's used on the wiki
+        self.peer_interested = False # whether our peer is interested in us
+        self.peer_choked = True # whether we are choking our peer
+        self.me_interested = False # whether we are interested in this peer
+        self.me_choked = True # whether this peer is choking us
         
         # number of blocks the peer has succesfully uploaded to me in this period
         self.blocks_uploaded = 0
