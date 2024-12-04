@@ -14,7 +14,7 @@ may be shorter. We set our own block length (and tell peers about it by using th
 in request messages). 
 """
 # 10 second wait to rerequest a piece
-TIMEOUT = 2
+TIMEOUT = 10
 
 class PieceList: 
     
