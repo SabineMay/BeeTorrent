@@ -51,7 +51,7 @@ Protocol spec: https://wiki.theory.org/BitTorrentSpecification
     * piece
     * cancel
 
-## ~Fancy~ features
+## \~Fancy\~ features
 * Communication with UDP tracker 
 * Communication with HTTPS tracker
 * Rarest-first download strategy
