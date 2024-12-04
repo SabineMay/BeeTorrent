@@ -16,7 +16,7 @@ from bcoding import bencode, bdecode
 from download_strat import *
 
 TORRENT_FILE_PATH = 'tor-file-examples/cosmos-laundromat.torrent'
-MAX_PENDING_REQUESTS = 1
+MAX_PENDING_REQUESTS = 5
 
 def main():
     """
@@ -347,7 +347,9 @@ def main():
         for bee in swarm:
             if bee.me_interested and not bee.me_choked and bee.num_pending_requests_sent < MAX_PENDING_REQUESTS:
                 piece_idx = get_rarest_piece_needed(bee, piecelist, rarest_list)
-                block_idx = piecelist.get_needed_block_for_piece(piece_idx)
+                block_idx = -1
+                if piece_idx != -1:
+                    block_idx = piecelist.get_needed_block_for_piece(piece_idx)
 
                 if piece_idx != -1 and block_idx != -1:
                     block_length = piecelist.block_length
@@ -408,6 +410,14 @@ def main():
             send_message_tcp(unchoke_msg, unchoke_peer.sock)
             unchoke_peer.peer_choked = 0
             charity_clock = time.monotonic() # reset clock
+
+        piecelist.set_timedout_requests_to_ready()
+
+        print("pieces resolved: " + str(piecelist.num_pieces_resolved))
+
+        if piecelist.num_pieces_resolved == piecelist.num_pieces:
+            print("Done")
+            break
 
 
 if __name__=="__main__":

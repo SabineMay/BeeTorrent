@@ -29,7 +29,7 @@ def get_rarest_list(swarm):
 
 def get_rarest_piece_needed(bee, piece_list, rarest_list):
     for (ind, num_who_have) in rarest_list:
-        if not (piece_list.is_resolved(ind)) and (bee.bitfield[ind]):
+        if not (piece_list.is_resolved(ind)) and (bee.bitfield[ind]) and piece_list.piece_has_blocks_to_be_requested(ind):
             return ind
         
     return -1

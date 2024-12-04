@@ -1,6 +1,7 @@
 from enum import Enum
 import hashlib
 import random
+import time
 
 """
 Class that tracks which pieces we have hash-verified, and which blocks we have received.
@@ -12,6 +13,9 @@ Blocks are uniform subdivisions of pieces, except for the last block in every pi
 may be shorter. We set our own block length (and tell peers about it by using the length variable
 in request messages). 
 """
+# 10 second wait to rerequest a piece
+TIMEOUT = 10
+
 class PieceList: 
     
     class Status(Enum):
@@ -38,19 +42,37 @@ class PieceList:
         
         self.output_file = output_file
         self.hashes = hashes
+
+        self.request_times = {}
+
+        self.num_pieces_resolved = 0
     
     # Update status of block to REQUESTED
     def request(self, piece_idx, block_idx):
         self.blocks[piece_idx * self.blocks_per_piece + block_idx] = PieceList.Status.REQUESTED
+        self.request_times[piece_idx * self.blocks_per_piece + block_idx] = time.time()
     
     # Update status of block to READY
     def ready(self, piece_idx, block_idx):
         self.blocks[piece_idx * self.blocks_per_piece + block_idx] = PieceList.Status.READY
+
+    def set_timedout_requests_to_ready(self):
+        curr = time.time()
+        timedout = []
+        for index in self.request_times:
+            if (curr - self.request_times[index]) > TIMEOUT:
+                self.blocks[index] = PieceList.Status.READY
+                timedout.append(index)
+        
+        for index in timedout:
+            self.request_times.pop(index, -1)
     
     # Update status of bock to RECEIVED, and attempt to 
     # resolve the piece that the block is a part of
     def receive(self, piece_idx, block_idx):
         self.blocks[piece_idx * self.blocks_per_piece + block_idx] = PieceList.Status.RECEIVED
+        self.request_times.pop(piece_idx * self.blocks_per_piece + block_idx, -1)
+        print("received: " + str(piece_idx) + ", " + str(block_idx))
         self.attempt_resolve(piece_idx)
     
     # Returns True if status of block is REQUESTED
@@ -89,6 +111,7 @@ class PieceList:
 
         if (h.digest() == self.hashes[piece_idx]):
             self.pieces[piece_idx] = PieceList.Status.RESOLVED
+            self.num_pieces_resolved += 1
             return True
         
         for block_idx in range(self.blocks_per_piece):
@@ -115,6 +138,15 @@ class PieceList:
             return True
         return False
 
+    def piece_has_blocks_to_be_requested(self, piece_idx):
+        block_idx = 0
+        while block_idx < self.blocks_per_piece:
+            if self.blocks[piece_idx * self.blocks_per_piece + block_idx] == PieceList.Status.READY:
+                return True
+            block_idx += 1
+        return False
+
+
     def next_needed_block(self):
         block_idx = 0
         piece_idx = 0
@@ -140,11 +172,11 @@ class PieceList:
                 if (self.blocks[(piece_idx * self.blocks_per_piece) + i] != PieceList.Status.RECEIVED) and (self.blocks[(piece_idx * self.blocks_per_piece) + i] != PieceList.Status.REQUESTED):
                     return i
                 i += 1
-            i = 0
-            while i < self.blocks_per_piece:
-                if (self.blocks[(piece_idx * self.blocks_per_piece) + i] != PieceList.Status.RECEIVED):
-                    return i
-                i += 1
+            # i = 0
+            # while i < self.blocks_per_piece:
+            #     if (self.blocks[(piece_idx * self.blocks_per_piece) + i] != PieceList.Status.RECEIVED):
+            #         return i
+            #     i += 1
         
         return -1
 
