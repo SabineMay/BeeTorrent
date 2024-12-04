@@ -28,7 +28,7 @@ def handle_not_interested(bee: Bee, msg):
 
 def handle_have(bee: Bee, msg):
     piece_idx = int.from_bytes(msg[1:5:1])
-    bee.set_bitfield_at_index(piece_index, True)
+    bee.set_bitfield_at_index(piece_idx, True)
 
 def handle_bitfield(bee: Bee, msg):
     bee.update_bitfield_from_received_bitfield(msg[1:])
