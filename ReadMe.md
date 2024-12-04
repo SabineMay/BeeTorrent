@@ -62,7 +62,7 @@ Protocol spec: https://wiki.theory.org/BitTorrentSpecification
 ## Open issues
 TODO: talk about maintaining requests queue vs outright rejecting request, link queing debate from the wiki: https://wiki.theory.org/BitTorrentSpecification#Queuing 
 
-## Future work
+## Roadmap
 * Implement support for peer messages with id $\in$ [9]
     * port (used in BT-DHT)
 
