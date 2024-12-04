@@ -15,7 +15,7 @@ from operator import itemgetter
 from bcoding import bencode, bdecode
 from download_strat import *
 
-TORRENT_FILE_PATH = 'tor-file-examples/cosmos-laundromat.torrent'
+TORRENT_FILE_PATH = 'tor-file-examples/audacity-win-3.7.0-64bit.exe.torrent'
 MAX_PENDING_REQUESTS = 5
 
 def main():
@@ -145,6 +145,7 @@ def main():
     peers = metadata["peers"]
     # print("Metadata is: " + str(metadata) + "\n")
     swarm: list[Bee] = list()
+    dead_swarm: list[Bee] = list()
     num_bees = 0
     compact = False
     
@@ -210,6 +211,7 @@ def main():
     
     # Begin main logic to handle never-ending byte stream of <prefix_len><msg>
     piecelist = PieceList(num_pieces, piece_length, blocks_per_piece, block_length, output_file, hashes)
+    piecelist.downsize_last_piece(output_file_length)
     output_file.write(b'\x00' * output_file_length)
 
     
@@ -313,6 +315,7 @@ def main():
                         print("Error receiving a message from " + curr.to_string() + ", removing from the swarm")
                         sel.unregister(curr.sock)
                         swarm.remove(curr)
+                        dead_swarm.append(curr)
                         num_bees -= 1
                     
                 
@@ -320,6 +323,7 @@ def main():
             if (bee.get_time_elapsed() > 120): # 2 minutes since last message
                 sel.unregister(bee.sock)
                 swarm.remove(bee)
+                dead_swarm.append(bee)
                 num_bees -= 1
         
         # first, check the bees that have pieces we're interested in
@@ -351,14 +355,28 @@ def main():
                 if piece_idx != -1:
                     block_idx = piecelist.get_needed_block_for_piece(piece_idx)
 
+                print("requesting " + str(piece_idx) + ", " + str(block_idx))
                 if piece_idx != -1 and block_idx != -1:
                     block_length = piecelist.block_length
                     if block_idx == piecelist.blocks_per_piece - 1:
                         block_length = piecelist.piece_length - (block_length * (piecelist.blocks_per_piece - 1))
+                    
+                    if piece_idx == piecelist.num_pieces - 1:
+                        if block_idx == piecelist.last_piece_num_blocks - 1:
+                            block_length = piecelist.last_block_length
+                            
                     #print(piece_idx, block_idx)
-                    send_message_tcp(construct_request_msg(piece_idx, block_idx * piecelist.block_length, block_length), bee.sock)
-                    piecelist.request(piece_idx, block_idx)
-                    bee.num_pending_requests_sent += 1
+                    try:
+                        send_message_tcp(construct_request_msg(piece_idx, block_idx * piecelist.block_length, block_length), bee.sock)
+                        piecelist.request(piece_idx, block_idx)
+                        bee.num_pending_requests_sent += 1
+                    except SocketDisconnected as e:
+                        # remove bee if there's a problem
+                        sel.unregister(bee.sock)
+                        swarm.remove(bee)
+                        dead_swarm.append(bee)
+                        num_bees -= 1
+
 
                 # returns next block that hasn't been RECEIVED, we should pick
                 # a better strategy
@@ -410,6 +428,35 @@ def main():
             send_message_tcp(unchoke_msg, unchoke_peer.sock)
             unchoke_peer.peer_choked = 0
             charity_clock = time.monotonic() # reset clock
+
+            for corpse in dead_swarm:
+                corpse.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                corpse.sock.settimeout(1)
+                
+                try:
+                    corpse.sock.connect(corpse.addr) 
+                    # do handshake
+                    # close socket if handshake failed
+                except Exception as e: 
+                    print("Could not connect to peer " + str(corpse.addr) + " (" + (str(e)) + ")\n")
+                    log_error(Exception("Could not connect to peer " + str(corpse.addr) + " (" + (str(e)) + ")"))
+                    corpse.sock.close()
+                else: 
+                    # recommended to set non blocking for use with selectors, so in case of edge cases the program won't hang
+                    # kept the socket blocking durring connect() so that we know if connect failures are from 
+                    # server not responding (timeout) or server actively rejecting us
+                    try:
+                        send_handshake(corpse.sock, info_hash, myid)
+                        recv_handshake(corpse.sock)
+                        #print(info_hash)
+                        print("Sucesfully connected to peer " + str(corpse.addr) + "\n")
+                        corpse.sock.setblocking(False) 
+                        swarm.append(corpse)
+                        dead_swarm.remove(corpse)
+                        num_bees += 1
+                    except Exception as e:
+                        print("Failed to handshake with peer " + str(corpse.addr) + "\n")
+                        log_error(Exception("Failed handshake with " + str(corpse.addr) +  ": " + str(e)))
 
         piecelist.set_timedout_requests_to_ready()
 

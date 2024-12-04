@@ -61,6 +61,10 @@ def handle_piece(bee: Bee, msg, X, piecelist: PieceList):
     proper_block_length = piecelist.block_length
     if block_idx == piecelist.blocks_per_piece - 1:
         proper_block_length = piecelist.piece_length - (piecelist.block_length * (piecelist.blocks_per_piece - 1))
+    
+    if piece_idx == piecelist.num_pieces - 1:
+        if block_idx == piecelist.last_piece_num_blocks - 1:
+            proper_block_length = piecelist.last_block_length
 
     if (X != proper_block_length):
         print("Peer gave us an incorrectly-sized block")
