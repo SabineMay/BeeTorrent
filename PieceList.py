@@ -130,6 +130,19 @@ class PieceList:
                 block_idx = 0
         
         return (-1, -1)
+    
+    def get_needed_block_for_piece(self, piece_idx):
+        if (self.is_resolved(piece_idx)):
+            return -1
+        else:
+            i = 0
+            while i < self.blocks_per_piece:
+                if (self.blocks[(piece_idx * self.blocks_per_piece) + i] != PieceList.Status.RECEIVED):
+                    return i
+                i += 1
+        
+        return -1
+
 
     
     

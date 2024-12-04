@@ -346,12 +346,26 @@ def main():
         # once we do that, we should adjust MAX_PENDING_REQUESTS to smth else
         for bee in swarm:
             if bee.me_interested and not bee.me_choked and bee.num_pending_requests_sent < MAX_PENDING_REQUESTS:
+                piece_idx = get_rarest_piece_needed(bee, piecelist, rarest_list)
+                block_idx = piecelist.get_needed_block_for_piece(piece_idx)
+
+                if piece_idx != -1 and block_idx != -1:
+                    block_length = piecelist.block_length
+                    if block_idx == piecelist.blocks_per_piece - 1:
+                        block_length = piecelist.piece_length - (block_length * (piecelist.blocks_per_piece - 1))
+                    print(piece_idx, block_idx)
+                    send_message_tcp(construct_request_msg(piece_idx, block_idx * piecelist.block_length, block_length), bee.sock)
+                    piecelist.request(piece_idx, block_idx)
+                    bee.num_pending_requests_sent += 1
+
                 # returns next block that hasn't been RECEIVED, we should pick
                 # a better strategy
+                '''
                 (piece_idx, block_idx) = piecelist.next_needed_block()
 
                 if piece_idx == -1 and block_idx == -1:
                     # TODO pick what to do once we get the whole file
+                    print('yippee')
                     pass
                 else:
                     block_length = piecelist.block_length
@@ -360,13 +374,12 @@ def main():
                     send_message_tcp(construct_request_msg(piece_idx, block_idx * piecelist.block_length, block_length), bee.sock)
                     piecelist.request(piece_idx, block_idx)
                     bee.num_pending_requests_sent += 1
+                '''
 
-
-        
-                
         curr_time = time.monotonic()
 
         if curr_time - keep_alive_clock >= 30:
+            
             for bee in swarm:
                 send_message_tcp(keep_alive_msg, bee.sock)
             keep_alive_clock = time.monotonic()
@@ -383,6 +396,7 @@ def main():
             while i < 4 and i < len(scoreboard):
                 send_message_tcp(unchoke_msg, (scoreboard[i])[0].sock)
                 (scoreboard[i])[0].peer_choked = 0
+                #print(scoreboard[i][1])
                 i += 1
 
             auction_clock = time.monotonic() # reset clock
