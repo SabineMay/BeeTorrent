@@ -484,7 +484,14 @@ def main():
             output_file.seek(0, 0)
             # mult-file 
             for file_dict in info_dict["files"]:
-                f = open(file_dict["path"], "wb")
+                filename = file_dict["path"][0]
+
+                if len(file_dict["path"] > 1):
+                    for part in file_dict["path"][1:]:
+                        filename += "/"
+                        filename += part
+                
+                f = open(filename, "wb")
                 f.write(output_file.read(file_dict["length"]))
                 f.close()
             output_file.close()
