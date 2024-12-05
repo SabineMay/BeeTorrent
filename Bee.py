@@ -16,21 +16,27 @@ class Bee: # part of the swarm
         # Will almost certaintly be the former given that we're behind a firwall
         self.sock = None
         
-        self.peer_interested = False
-        self.peer_choked = True
-        self.me_interested = False
-        self.me_choked = True
+        # Note: the notation here is slightly different than what's used on the wiki
+        self.peer_interested = False # whether our peer is interested in us
+        self.peer_choked = True # whether we are choking our peer
+        self.me_interested = False # whether we are interested in this peer
+        self.me_choked = True # whether this peer is choking us
         
         # number of blocks the peer has succesfully uploaded to me in this period
         self.blocks_uploaded = 0
         
         # pieces that the peer has, used to determine what I should request
         self.bitfield = [False] * num_pieces
+        # the bitfield has been initialized based on a bitfield or have message
+        self.bitfield_initialized = False
         
         # blocks that the peer wants, updated when handling requests and used when unchoking
         self.request_queue = list()
         self.max_requests = 5
         self.num_requests = 0
+
+        # pending requests that we sent to the peer
+        self.num_pending_requests_sent = 0
     
     def __eq__(self, other):
         if (other != None and self.addr == other.addr): # potential issue: is this the correct way to check for tuple equality
@@ -54,7 +60,7 @@ class Bee: # part of the swarm
     
     def cancel_request(self, idx, begin, length):
         self.request_queue.remove((idx, begin, length))
-        self.num_requests += 1
+        self.num_requests -= 1
 
     # takes strings for ip, int for port
     def set_id(self, peerid, ip, port):
@@ -69,6 +75,7 @@ class Bee: # part of the swarm
     
     def set_bitfield_at_index(self, piece_idx, value):
         self.bitfield[piece_idx] = value
+        self.bitfield_initialized = True
     
     def update_bitfield_from_received_bitfield(self, bitfield):
         i = 0
@@ -86,6 +93,8 @@ class Bee: # part of the swarm
                     break
                 j += 1
             i += 1
+        
+        self.bitfield_initialized = True
     
     def to_string(self): 
         return "Bee: [peer_id: " + str(self.peerid) + ", addr: " + str(self.addr[0]) + ":" + str(self.addr[1]) + ", clock: " + str(self.clock) + "]"

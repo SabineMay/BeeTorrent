@@ -20,6 +20,7 @@
 sabine-env/
 yasadu-env/
 patrick-venv/
+venv/
 
 # pycache
 __pycache__/

@@ -11,12 +11,17 @@ from construct_messages import *
 from handle_messages import *
 import math
 from PieceList import PieceList
-
+from operator import itemgetter
 from bcoding import bencode, bdecode
+from download_strat import *
+import os
 
-TORRENT_FILE_PATH = 'tor-file-examples/enwiki.torrent'
+
+TORRENT_FILE_PATH = 'tor-file-examples/cosmos-laundromat.torrent'
+MAX_PENDING_REQUESTS = 5
 
 def main():
+    done = False
     """
     Add some comments here detailing what variables we are keeping to maintain our own state and
     the state of our peers.
@@ -52,7 +57,7 @@ def main():
     torrent_file_path = TORRENT_FILE_PATH
     torrent_name_list = torrent_file_path.split("/")
     output_file_name = (torrent_name_list[len(torrent_name_list) - 1].split("."))[0] + "_bytes"
-    output_file = open(output_file_name, "wb")
+    output_file = open(output_file_name, "w+b")
     
     
     # used to poll over peer sockets 
@@ -96,8 +101,21 @@ def main():
     
     output_file_length = 0
     piece_length = info_dict["piece length"]
-    hashes = info_dict["pieces"]
-    
+    hashes = []
+
+    # hashes are returned as 1 giant bytestring instead of a list of bytestrings
+    # so transform it into a list of bytestrings
+    current = b''
+    i = 0
+    for byte in info_dict["pieces"]:
+        current += byte.to_bytes(1)
+        i += 1
+        if i >= 20:
+            hashes.append(current)
+            current = b''
+            i = 0
+
+
     if "files" in info_dict: 
         # mult-file 
         for file_dict in info_dict["files"]:
@@ -130,6 +148,7 @@ def main():
     peers = metadata["peers"]
     # print("Metadata is: " + str(metadata) + "\n")
     swarm: list[Bee] = list()
+    dead_swarm: list[Bee] = list()
     num_bees = 0
     compact = False
     
@@ -195,7 +214,10 @@ def main():
     
     # Begin main logic to handle never-ending byte stream of <prefix_len><msg>
     piecelist = PieceList(num_pieces, piece_length, blocks_per_piece, block_length, output_file, hashes)
+    piecelist.downsize_last_piece(output_file_length)
     output_file.write(b'\x00' * output_file_length)
+
+    
     
     def handle_msg(prefix_len, bee):
         try:
@@ -225,6 +247,7 @@ def main():
                             # keep track of who uploaded us the most number of blocks (all block sizes are the same,
                             # except for irregular blocks at the end of pieces, so estimate by counting by number of blocks)
                             bee.blocks_uploaded += 1
+                        bee.num_pending_requests_sent -= 1
                     case 8:
                         handle_cancel(bee, msg)
                     case 9:
@@ -232,11 +255,11 @@ def main():
                     case _: 
                         print("Peer message received with unkown ID " + str(msg[5]))
         except SocketDisconnected as e:
-            log_error(Exception("Error in handle_msg: " + str(e)))
+            log_error(Exception("Error in handle_msg with " + bee.to_string() + ": " + str(e)))
     
-    
+    rarest_list = []
     while(True):
-        events = sel.select(timeout = 5) # potential issue: need to adjust timeout based on how much time left on auction/tracker/charity clocks
+        events = sel.select(timeout = 1) # potential issue: need to adjust timeout based on how much time left on auction/tracker/charity clocks
         
         for key, mask in events: 
             
@@ -286,43 +309,199 @@ def main():
                 else: 
                     try:
                         msg = recv_message_tcp(curr.sock, 4)
-                        prefix_len = int.from_bytes(msg[0:5:1], byteorder="big")
+                        prefix_len = int.from_bytes(msg, byteorder="big")
                         handle_msg(prefix_len, curr)
                     except SocketDisconnected as e:
                         # if we run into an error when receiving a message from the bee
                         # then remove the bee from the swarm
                         log_error(Exception("Exception when receiving message from " + curr.to_string() + ": " + str(e)))
                         print("Error receiving a message from " + curr.to_string() + ", removing from the swarm")
-                        sel.unregister(bee.sock)
-                        swarm.remove(bee)
+                        sel.unregister(curr.sock)
+                        swarm.remove(curr)
+                        dead_swarm.append(curr)
                         num_bees -= 1
                     
-                
-        for bee in swarm: 
+        
+        # iterate through a copy of swarm so we aren't potentially
+        # removing elements from the same list we are iterating through
+        for bee in list(swarm): 
             if (bee.get_time_elapsed() > 120): # 2 minutes since last message
                 sel.unregister(bee.sock)
                 swarm.remove(bee)
+                dead_swarm.append(bee)
                 num_bees -= 1
+        
+        # first, check the bees that have pieces we're interested in
+        for bee in swarm:
+            if (rarest_list == []):
+                rarest_list = get_rarest_list(swarm)
+                #print(rarest_list)
+            try:
+                if piecelist.check_interest(bee.bitfield):
+                    if not bee.me_interested:
+                        send_message_tcp(interested_msg, bee.sock)
+                        bee.me_interested = True
+                else:
+                    if bee.me_interested:
+                        send_message_tcp(not_interested_msg, bee.sock)
+                        bee.me_interested = False
+            except SocketDisconnected as e:
+                log_error(Exception("Exception when sending interested message to " + bee.to_string() + ": " + str(e)))
+                print("Error sending interested message to " + bee.to_string())
+            
+        
+        # next, request pieces that we're interested in
+        # TODO: get a better strategy than just requesting the next needed block.
+        # once we do that, we should adjust MAX_PENDING_REQUESTS to smth else
+        for bee in list(swarm):
+            if bee.me_interested and not bee.me_choked and bee.num_pending_requests_sent < MAX_PENDING_REQUESTS:
+                piece_idx = get_rarest_piece_needed(bee, piecelist, rarest_list)
+                block_idx = -1
+                if piece_idx != -1:
+                    block_idx = piecelist.get_needed_block_for_piece(piece_idx)
 
-                
+                print("requesting " + str(piece_idx) + ", " + str(block_idx))
+                if piece_idx != -1 and block_idx != -1:
+                    block_length = piecelist.block_length
+                    if block_idx == piecelist.blocks_per_piece - 1:
+                        block_length = piecelist.piece_length - (block_length * (piecelist.blocks_per_piece - 1))
+                    
+                    if piece_idx == piecelist.num_pieces - 1:
+                        if block_idx == piecelist.last_piece_num_blocks - 1:
+                            block_length = piecelist.last_block_length
+                            
+                    #print(piece_idx, block_idx)
+                    try:
+                        send_message_tcp(construct_request_msg(piece_idx, block_idx * piecelist.block_length, block_length), bee.sock)
+                        piecelist.request(piece_idx, block_idx)
+                        bee.num_pending_requests_sent += 1
+                    except SocketDisconnected as e:
+                        # remove bee if there's a problem
+                        sel.unregister(bee.sock)
+                        swarm.remove(bee)
+                        dead_swarm.append(bee)
+                        num_bees -= 1
+
+
+                # returns next block that hasn't been RECEIVED, we should pick
+                # a better strategy
+                '''
+                (piece_idx, block_idx) = piecelist.next_needed_block()
+
+                if piece_idx == -1 and block_idx == -1:
+                    # TODO pick what to do once we get the whole file
+                    print('yippee')
+                    pass
+                else:
+                    block_length = piecelist.block_length
+                    if block_idx == piecelist.blocks_per_piece - 1:
+                        block_length = piecelist.piece_length - (block_length * (piecelist.blocks_per_piece - 1))
+                    send_message_tcp(construct_request_msg(piece_idx, block_idx * piecelist.block_length, block_length), bee.sock)
+                    piecelist.request(piece_idx, block_idx)
+                    bee.num_pending_requests_sent += 1
+                '''
+
         curr_time = time.monotonic()
 
         if curr_time - keep_alive_clock >= 30:
-            for bee in swarm:
-                send_message_tcp(keep_alive_msg, bee.sock)
+            
+            for bee in list(swarm):
+                try:
+                    send_message_tcp(keep_alive_msg, bee.sock)
+                except SocketDisconnected as e:
+                    sel.unregister(bee.sock)
+                    swarm.remove(bee)
+                    dead_swarm.append(bee)
+                    num_bees -= 1
+
             keep_alive_clock = time.monotonic()
 
         if (curr_time - auction_clock >= 10):
             # recalculate top 4 interested uploaders 
+            scoreboard = []
+            for bee in swarm:
+                scoreboard.append((bee, bee.blocks_uploaded))
+            
+            scoreboard.sort(key=itemgetter(1), reverse=True)
+
+            i = 0
+            while i < 4 and i < len(scoreboard):
+                send_message_tcp(unchoke_msg, (scoreboard[i])[0].sock)
+                (scoreboard[i])[0].peer_choked = 0
+                #print(scoreboard[i][1])
+                i += 1
+
             auction_clock = time.monotonic() # reset clock
 
         if (curr_time - charity_clock >= 30):
-            print("unchoking")
             # optimistically unchoke a new person 
             unchoke_peer = random.choice(swarm)
             # Check if peer is already unchoked
             send_message_tcp(unchoke_msg, unchoke_peer.sock)
+            unchoke_peer.peer_choked = 0
             charity_clock = time.monotonic() # reset clock
+
+            for corpse in list(dead_swarm):
+                corpse.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                corpse.sock.settimeout(1)
+                
+                try:
+                    corpse.sock.connect(corpse.addr) 
+                    # do handshake
+                    # close socket if handshake failed
+                except Exception as e: 
+                    print("Could not connect to peer " + str(corpse.addr) + " (" + (str(e)) + ")\n")
+                    log_error(Exception("Could not connect to peer " + str(corpse.addr) + " (" + (str(e)) + ")"))
+                    corpse.sock.close()
+                else: 
+                    # recommended to set non blocking for use with selectors, so in case of edge cases the program won't hang
+                    # kept the socket blocking durring connect() so that we know if connect failures are from 
+                    # server not responding (timeout) or server actively rejecting us
+                    try:
+                        send_handshake(corpse.sock, info_hash, myid)
+                        recv_handshake(corpse.sock)
+                        #print(info_hash)
+                        print("Sucesfully connected to peer " + str(corpse.addr) + "\n")
+                        corpse.sock.setblocking(False) 
+                        sel.register(corpse.sock, selectors.EVENT_READ)
+                        swarm.append(corpse)
+                        dead_swarm.remove(corpse)
+                        num_bees += 1
+                    except Exception as e:
+                        print("Failed to handshake with peer " + str(corpse.addr) + "\n")
+                        log_error(Exception("Failed handshake with " + str(corpse.addr) +  ": " + str(e)))
+
+        piecelist.set_timedout_requests_to_ready()
+
+        print("pieces resolved: " + str(piecelist.num_pieces_resolved))
+
+        if piecelist.num_pieces_resolved == piecelist.num_pieces:
+            print("Done")
+            done = True
+            break
+
+    if done:
+        if "files" in info_dict: 
+            output_file.seek(0, 0)
+            # mult-file 
+            for file_dict in info_dict["files"]:
+                filename = file_dict["path"][0]
+
+                if len(file_dict["path"]) > 1:
+                    for part in file_dict["path"][1:]:
+                        filename += "/"
+                        filename += part
+                
+                f = open(filename, "wb")
+                f.write(output_file.read(file_dict["length"]))
+                f.close()
+            output_file.close()
+        else: 
+            # single file
+            output_file.close()
+            os.rename(output_file_name, info_dict["name"])
+
+
 
 
 if __name__=="__main__":
