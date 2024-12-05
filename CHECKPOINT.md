@@ -39,7 +39,7 @@ Constructs messages to be sent to peers
 Handles the receipt of peer messages. May send responses to peers if prompted (like when receiving a request), but does not contain logic for self-initiated messages (like when generating a request)
 
 ### download_strat
-TODO
+Calculates the next pieces to request using rarest first strategy.
 
 ## Driver module
 ### driver
