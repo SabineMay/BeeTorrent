@@ -16,6 +16,7 @@ from bcoding import bencode, bdecode
 from download_strat import *
 import os
 
+
 TORRENT_FILE_PATH = 'tor-file-examples/cosmos-laundromat.torrent'
 MAX_PENDING_REQUESTS = 5
 

@@ -26,6 +26,4 @@ venv/
 __pycache__/
 
 # output files
-lots-of-numbers_bytes
-cosmos-laundromat_bytes
-alice_bytes
+*_bytes

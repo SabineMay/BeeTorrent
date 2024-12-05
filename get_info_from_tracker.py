@@ -3,6 +3,7 @@ from bcoding import bencode, bdecode
 import hashlib
 import urllib.parse
 import socket
+import ssl
 from send_receive_message import *
 from random import randint
 import time
@@ -63,6 +64,44 @@ def create_torrent_get_request_from_file(torrent_file_path, listening_port, my_i
 
     return construct_GET_request(host_domain, port_number, complete_path)
 
+# used for HTTPS tracker
+def create_torrent_get_request_from_info(host_domain, port_number, base_path, tde, listening_port, my_id, uploaded = 0, downloaded = 0, left = None, event = None):
+
+    h = hashlib.sha1()
+
+    h.update(bencode(tde['info']))
+
+    params = {}
+    
+    params['info_hash'] = urllib.parse.quote_from_bytes(h.digest())
+
+    params['peer_id'] = urllib.parse.quote_from_bytes(my_id)
+
+    params['port'] = str(listening_port)
+
+    params['uploaded'] = str(uploaded)
+
+    params['downloaded'] = str(downloaded)
+
+
+    if left != None:
+        params['left'] = str(left)
+    else:
+        if 'length' in tde['info'].keys():
+            params['left'] = str(int(tde['info']['length']) - downloaded)
+        else:
+            if 'files' in tde['info'].keys():
+                l = 0
+                for f in tde['info']['files']:
+                    l += int(f['length'])
+                params['left'] = str(l - downloaded)
+
+    if event != None:
+        params['event'] = event
+
+    complete_path = create_path(base_path, params)
+
+    return construct_GET_request(host_domain, port_number, complete_path)
 
 def rand_transaction_id():
     return randint(0, 4294967295)
@@ -319,6 +358,47 @@ def get_info_from_tracker_specified_in_file(torrent_file_path, listening_port, p
 
         # decode and return
         return tracker_info
+    elif "https://" in tde['announce']:
+        # https tracker
+        sliced = tde['announce'].replace("https://", "")
+        host_domain = None
+        base_path = "/announce"
+        port_num = 443
+
+        if (":" in sliced):
+            # there is a specified port
+            host_domain = sliced.split(":")[0]
+            if ("/" in sliced):
+                port_num = int(sliced.split(":")[1].split("/")[0])
+                base_path = "/" + sliced.split("/")[1]
+            else:
+                port_num = int(sliced.split(":")[1])
+        else:
+            # there is not a specified port
+            if ("/" in sliced):
+                host_domain = sliced.split("/")[0]
+                base_path = "/" + sliced.split("/")[1]
+            else:
+                host_domain = sliced
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        # TODO set socket timeout?
+        sock.connect((host_domain, port_num))
+
+        msg = create_torrent_get_request_from_info(host_domain, port_num, base_path, tde, listening_port, peer_id, uploaded = uploaded, downloaded = downloaded, left = left, event = event)
+
+        context = ssl.create_default_context()
+        ssl_sock = context.wrap_socket(sock, server_hostname=host_domain)
+
+        try:
+            ssl_sock.sendall(msg)
+            # receive the response back, the payload of the http response is stored in resp
+            resp = recv_http_response(ssl_sock)
+        except socket.timeout:
+            raise socket.timeout("Timeout when connecting to https tracker")
+
+        return bdecode(resp)
 
 
 # byte array should be 6 bytes long, in hexadecimal
