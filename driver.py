@@ -486,7 +486,7 @@ def main():
             for file_dict in info_dict["files"]:
                 filename = file_dict["path"][0]
 
-                if len(file_dict["path"] > 1):
+                if len(file_dict["path"]) > 1:
                     for part in file_dict["path"][1:]:
                         filename += "/"
                         filename += part
