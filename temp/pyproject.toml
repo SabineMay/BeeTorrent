@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "BeeTorrent"
+version = "0.1.0"
+description = "A CMSC417 project to do torrent-y things"
+requires-python = ">=3.12"
+
+[tool.setuptools]
+py-modules = [
+    "arg_parser", "Bee", "construct_http_requests", "download_strat", 
+    "driver", "errors", "get_info_from_tracker", "handle_messages", 
+    "handshake", "PieceList", "Request", "send_receive_message", 
+    "construct_messages"
+]
+
+include-package-data = true
+
+[project.scripts]
+Dance = "driver:main"

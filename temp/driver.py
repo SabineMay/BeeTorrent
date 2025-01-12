@@ -1,0 +1,703 @@
+import selectors
+import socket 
+import sys
+from Bee import Bee
+from get_info_from_tracker import *
+import time
+import random
+from handshake import *
+from errors import *
+from construct_messages import *
+from handle_messages import *
+import math
+from PieceList import PieceList
+from operator import itemgetter
+from bcoding import bencode, bdecode
+from download_strat import *
+import os
+from arg_parser import *
+
+# delete TORRENT_FILE_PATH on final submit for demo
+# TORRENT_FILE_PATH = '/Users/sabinemay/umd-fall2024/cmsc417-docker/CMSC417/final-project/tor-file-examples/matt_mcgue.torrent'
+
+# comment what this means
+MAX_PENDING_REQUESTS = 20
+
+MAX_INCOMPLETE_PIECES = 20
+
+"""
+Add some comments here detailing what variables we are keeping to maintain our own state and
+the state of our peers.
+
+Ex. 
+swarm: list of Bees | all state information on peers (socket, bitfield, etc)
+dead_swarm: list of Bees that had a socket error during download | checked periodically to see if 
+                                                                 | they are attempting a reconnect
+piecelist: PieceList | state information about our pieces and blocks
+myid: bytes | id that we advertise to tracker during GET and advertise to peers during handshake
+output_file: byte file | file into which we write incoming blocks
+
+listen_sock | sock on which we listen for incoming peer connections; 
+            | will probably never get any action because we are behind a firewall 
+"""
+
+def main():
+    cwd = os.getcwd()
+    
+    # PARSE USER ARGS
+    (port, tor_file_path, (manual_peer_ip, manual_peer_port), seeding) = arg_parse(sys.argv)
+    
+    # tor_file_path = TORRENT_FILE_PATH
+    # port = 6881 
+    
+
+    done = False
+    
+    directories = ['tor-file-outputs', 'logs']
+        
+    for directory in directories:
+        # Build the full path
+        dir_path = os.path.join(cwd, directory)
+        
+        # Check if the directory exists and create it if not
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+            vlog(f"Created directory: {dir_path}")
+        else:
+            vlog(f"Directory already exists: {dir_path}")
+
+    initiate_logs(cwd)
+
+    # peerid communicated to tracker and to peers during handshake
+    azureus = ("-MD0417-").encode("utf-8")
+    random_bytes = random.randbytes(12)
+    myid = azureus + random_bytes
+    vlog("My id is " + str(myid) + "\n")
+
+    # info_hash for use in handshake
+    tor_file_path = os.path.join(cwd, tor_file_path)
+    torfile = open(tor_file_path, 'rb')
+    tde = bdecode(torfile)
+    h = hashlib.sha1()
+
+    h.update(bencode(tde['info']))
+
+    info_hash = h.digest()
+
+    
+    # make and/or clear file to hold our single torrent-file answer
+    torrent_name_list = tor_file_path.split("/")
+    output_file_name = (torrent_name_list[len(torrent_name_list) - 1].split("."))[0] + "_bytes"
+    output_file_path = os.path.join(cwd, ("tor-file-outputs/" + output_file_name))
+    output_file = open(output_file_path, "w+b")
+    
+    # used to poll over peer sockets 
+    sel = selectors.DefaultSelector() 
+    
+    # commented out below because we don't need it (don't need to explicitly tell the tracker our ip)
+
+    # get visible IP of this machine - requires requests library (or manual conversation with an external host);
+    # see https://stackoverflow.com/questions/17309288/importerror-no-module-named-requests;
+    # probably not actually necessary for this assigment - the tracker determines and advertises
+    # your ip via the socket connection you have with it;
+    # this also might not work in docker or VM
+    # ip = requests.get('https://checkip.amazonaws.com').text.strip() 
+    # print("my ip is: " + str(ip))
+    
+   
+    
+    listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listen_sock.bind(("0.0.0.0", port)) 
+    listen_sock.listen(5) # listen to a max of 5 queued connections, standard for bittorrent
+    
+    sel.register(listen_sock, selectors.EVENT_READ)
+
+    metadata = None
+    
+    try:
+        metadata = get_info_from_tracker_specified_in_file(tor_file_path, port, myid, event='started')
+    except Exception as e:
+        log_error(Exception("Failed when getting information from tracker: " + str(e)))
+        print("Getting information from tracker did not work with error " + str(e))
+        vlog("Make sure the tracker is up and running")
+        exit()
+    
+    
+    # Get information from torrent file about piece length and total number of pieces
+    torrent_file = open(tor_file_path, 'rb')
+    info_dict = bdecode(torrent_file)["info"]
+    
+    output_file_length = 0
+    piece_length = info_dict["piece length"]
+    hashes = []
+
+    # hashes are returned as 1 giant bytestring instead of a list of bytestrings
+    # so transform it into a list of bytestrings
+    current = b''
+    i = 0
+    for byte in info_dict["pieces"]:
+        current += byte.to_bytes(1, "big")
+        i += 1
+        if i >= 20:
+            hashes.append(current)
+            current = b''
+            i = 0
+
+
+    if "files" in info_dict: 
+        # mult-file 
+        for file_dict in info_dict["files"]:
+            output_file_length += file_dict["length"]
+    else: 
+        # single file
+        output_file_length = info_dict["length"]
+        
+    num_pieces = math.ceil(output_file_length / piece_length)
+    
+    block_length = 16000 # MAX = 16000
+    if (piece_length < block_length):
+        vlog("Default block size of 16KiB being down-adjusted to match piece length\n")
+        block_length = piece_length
+        
+    blocks_per_piece = math.ceil(piece_length / block_length)
+    
+    vlog("This file has " + str(num_pieces) + " pieces, with " + str(blocks_per_piece) + " blocks per piece\n")
+    
+    # peers (in metadata) can either be a dictionary or a bytestring in the following format:
+    # 4 bytes for ip address of peer 1, 2 bytes for port of peer 1, 4 bytes for ip of peer 2, 2 bytes for port
+    # of peer 2, etc.
+    # metadata = {"interval": 100, "peers":[{"peer id": 5, "ip": "127.0.0.1", "port": 1024}]}
+    
+    if ("failure reason" in metadata): 
+        print("Failed to get metadata from tracker: " + metadata["failure reason"] + "\n")
+        exit()
+    
+    interval = metadata["interval"]
+    peers = metadata["peers"]
+    # print("Metadata is: " + str(metadata) + "\n")
+    swarm: list[Bee] = list()
+    dead_swarm: list[Bee] = list()
+    num_bees = 0
+    compact = False
+    
+    if (not isinstance(peers, list)):
+        # tracker is in compact mode
+        # peers are one large byte string, with no peer id furnished
+        compact = True
+        peers = [peers[i:i+6] for i in range(0, len(peers), 6)]
+    
+    # if a manually added peer was specified
+    if manual_peer_port != -1 and manual_peer_ip != None:
+        newbie = Bee(num_pieces)
+
+        newbie.set_id(None, manual_peer_ip, manual_peer_port) # potential problem: does tracker return ip as a dotted decimal string or an integer?
+        
+        newbie.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        newbie.sock.settimeout(.5)
+        
+        try:
+            newbie.sock.connect(newbie.addr) 
+            # do handshake
+            # close socket if handshake failed
+        except Exception as e: 
+            vlog("Could not connect to peer " + str(newbie.addr) + " (" + (str(e)) + ")\n")
+            log_error(Exception("Could not connect to peer " + str(newbie.addr) + " (" + (str(e)) + ")"))
+            newbie.sock.close()
+        else: 
+            # recommended to set non blocking for use with selectors, so in case of edge cases the program won't hang
+            # kept the socket blocking durring connect() so that we know if connect failures are from 
+            # server not responding (timeout) or server actively rejecting us
+            try:
+                send_handshake(newbie.sock, info_hash, myid)
+                recv_handshake(newbie.sock)
+                #print(info_hash)
+                vlog("Sucesfully connected to peer " + str(newbie.addr) + "\n")
+                newbie.sock.setblocking(False) 
+                swarm.append(newbie)
+                num_bees += 1
+            except Exception as e:
+                vlog("Failed to handshake with peer " + str(newbie.addr) + "\n")
+                log_error(Exception("Failed handshake with " + str(newbie.addr) +  ": " + str(e)))
+                (newbie.sock).close()
+                #dead_swarm.append(newbie)
+    
+    
+    # For each peer, create a Bee to store their state and do a 
+    # handshake with them
+    for peer in peers:
+        newbie = Bee(num_pieces)
+        
+        
+        if (compact):
+            newbie.set_id(None, extract_ip(peer), extract_port(peer))
+        else: 
+            if "peer id" in peer:
+                newbie.set_id(peer["peer id"], peer["ip"], peer["port"]) # potential problem: does tracker return ip as a dotted decimal string or an integer?
+            else:
+                newbie.set_id(None, peer["ip"], peer["port"]) # if peer ids are not provided
+        
+        newbie.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        newbie.sock.settimeout(.5)
+        
+        try:
+            newbie.sock.connect(newbie.addr) 
+            # do handshake
+            # close socket if handshake failed
+        except Exception as e: 
+            vlog("Could not connect to peer " + str(newbie.addr) + " (" + (str(e)) + ")\n")
+            log_error(Exception("Could not connect to peer " + str(newbie.addr) + " (" + (str(e)) + ")"))
+            newbie.sock.close()
+        else: 
+            # recommended to set non blocking for use with selectors, so in case of edge cases the program won't hang
+            # kept the socket blocking durring connect() so that we know if connect failures are from 
+            # server not responding (timeout) or server actively rejecting us
+            try:
+                send_handshake(newbie.sock, info_hash, myid)
+                recv_handshake(newbie.sock)
+                #print(info_hash)
+                vlog("Sucesfully connected to peer " + str(newbie.addr) + "\n")
+                newbie.sock.setblocking(False) 
+                swarm.append(newbie)
+                num_bees += 1
+            except Exception as e:
+                vlog("Failed to handshake with peer " + str(newbie.addr) + "\n")
+                log_error(Exception("Failed handshake with " + str(newbie.addr) +  ": " + str(e)))
+                (newbie.sock).close()
+                #dead_swarm.append(newbie)
+    
+    if not swarm: 
+        print("No Bees in swarm!\n")
+        exit()
+    
+    # Tell all peers that they are choked and we are not interested 
+    for bee in swarm: 
+        try:
+            send_message_tcp(choke_msg, bee.sock)
+            send_message_tcp(not_interested_msg, bee.sock)
+            sel.register(bee.sock, selectors.EVENT_READ)
+            print(bee.to_string())
+        except Exception as e:
+            swarm.remove(bee)
+            dead_swarm.append(bee)
+    
+    auction_clock = time.monotonic() # 10 seconds should elapse before every non-optimistic choke/unchoke
+    charity_clock = time.monotonic() # 30 seconds should elapse before every optimistic unchokex
+    keep_alive_clock = time.monotonic() # Clock to keep track of when we should send keepalives
+    tracker_clock = time.monotonic() # interval seconds should elapse before we update tracker with our status and how much we've downloaded/uploaded
+    
+    # Begin main logic to handle never-ending byte stream of <prefix_len><msg>
+    piecelist = PieceList(num_pieces, piece_length, blocks_per_piece, block_length, output_file, hashes)
+    piecelist.downsize_last_piece(output_file_length)
+    output_file.write(b'\x00' * output_file_length)
+
+    
+    
+    def handle_msg(prefix_len, bee):
+        try:
+            if (prefix_len == 0):
+                handle_keepalive(bee)
+            else: 
+                msg = recv_message_tcp(bee.sock, prefix_len)
+                match (msg[0]):
+                    case 0: 
+                        handle_choke(bee, msg)
+                        #print(str(bee.sock) + ' is chocking us')
+                    case 1:
+                        handle_unchoke(bee, msg)
+                    case 2: 
+                        handle_interested(bee, msg)
+                    case 3:
+                        handle_not_interested(bee, msg)
+                    case 4:
+                        handle_have(bee, msg)
+                    case 5:
+                        handle_bitfield(bee, msg)
+                    case 6:
+                        handle_request(bee, msg, piecelist)
+                    case 7:
+                        # calculate block length (X) from prefix_len - 9 (see wikitheory specs)
+                        X = prefix_len - 9
+                        if (handle_piece(bee, msg, X, piecelist)):
+                            # keep track of who uploaded us the most number of blocks (all block sizes are the same,
+                            # except for irregular blocks at the end of pieces, so estimate by counting by number of blocks)
+                            bee.blocks_uploaded += 1
+                        bee.num_pending_requests_sent -= 1
+                    case 8:
+                        handle_cancel(bee, msg)
+                    case 9:
+                        handle_port()
+                    case _: 
+                        vlog("Peer message received with unkown ID " + str(msg[5]))
+        except SocketDisconnected as e:
+            log_error(Exception("Error in handle_msg with " + bee.to_string() + ": " + str(e)))
+            vlog("Error in handle_msg with " + bee.to_string() + ": " + str(e))
+    
+    rarest_list = []
+    optimistic_peer = None
+    seed = random.random()
+
+    t_loop_start = time.time()
+    vlog("Loop started at " + str(t_loop_start))
+    while(True):
+        events = sel.select(timeout = 0) # potential issue: need to adjust timeout based on how much time left on auction/tracker/charity clocks
+        #t0 = time.time()
+        for key, mask in events: 
+            
+            # getting a connect() message from a peer
+            if (key.fd == listen_sock.fileno()): 
+                sock, addr = listen_sock.accept()
+
+                print("connect message received: " + str(addr))
+            
+                curr = None
+                
+                for bee in swarm: 
+                    if (bee.addr == addr): # potential problem: is this the right way to check equality of tuples?
+                        vlog("Peer tried to establish duplicate connection with me")
+                        sock.close()
+                        bee.reset_clock()
+                        curr = bee
+                        break
+                    
+                if (curr == None):
+                    vlog("Got a message from an peer that we didn't see in the tracker, attempting to handshake\n")
+                    try:
+                        recv_handshake(sock)
+                        send_handshake(sock, info_hash, myid)
+                        # delete peer and close socket if handshake failed
+                        send_message_tcp(choke_msg, sock)
+                        send_message_tcp(not_interested_msg, sock)
+                        sel.register(sock, selectors.EVENT_READ)
+                        sock.setblocking(False)
+                        newbie = Bee(num_pieces)
+                        if (compact):
+                            newbie.set_id(None, extract_ip(peer), extract_port(peer))
+                        else: 
+                            newbie.set_id(peer["peer id"], peer["ip"], peer["port"])
+                        newbie.sock = sock
+                        newbie.addr = addr
+                        #(newbie.sock).sock.setblocking(False) 
+                        swarm.append(newbie)
+                        num_bees += 1
+                        for bee in list(dead_swarm):
+                            if bee.addr == newbie.addr:
+                                dead_swarm.remove(bee)
+                    except SocketDisconnected as e:
+                        log_error(Exception("Exception when handshaking with a bee that was not in the tracker: " + str(e)))
+                        vlog("Exception when handshaking with a bee that was not in the tracker: " + str(e))
+                    
+            
+            # getting a message from a peer on an already-established socket
+            else: 
+                curr = None
+
+                for bee in swarm: 
+                    if (key.fd == bee.sock.fileno()): # potential problem: is this the right way to check equality of tuples?
+                        bee.reset_clock()
+                        curr = bee
+                        break
+                
+                if (curr == None):
+                    vlog("Couldn't find peer assocated with selected socket in swarm")
+                else: 
+                    try:
+                        msg = recv_message_tcp(curr.sock, 4)
+                        prefix_len = int.from_bytes(msg, byteorder="big")
+                        handle_msg(prefix_len, curr)
+                        #print('here')
+                    except SocketDisconnected as e:
+                        # if we run into an error when receiving a message from the bee
+                        # then remove the bee from the swarm
+                        log_error(Exception("Exception when receiving message from " + curr.to_string() + ": " + str(e)))
+                        vlog("Error receiving a message from " + curr.to_string() + ", removing from the swarm")
+                        sel.unregister(curr.sock)
+                        swarm.remove(curr)
+                        dead_swarm.append(curr)
+                        num_bees -= 1
+        #print(time.time() - t0)
+
+        rarest_list = get_rarest_list(swarm, piecelist, seed)
+
+        ## WITH RAM ####
+        if len(piecelist.piece_bytes) > MAX_INCOMPLETE_PIECES:
+            rarest_list = []
+
+            for index in piecelist.piece_bytes:
+                rarest_list.append((index, 1))
+        ####
+
+        for bee in list(swarm):
+            if bee.me_interested and not bee.me_choked and bee.num_pending_requests_sent < MAX_PENDING_REQUESTS:
+                piece_idx = get_rarest_piece_needed(bee, piecelist, rarest_list)
+                block_idx = -1
+                if piece_idx != -1:
+                    block_idx = piecelist.get_needed_block_for_piece(piece_idx)
+
+                #print("requesting " + str(piece_idx) + ", " + str(block_idx))
+                if piece_idx != -1 and block_idx != -1:
+                    block_length = piecelist.block_length
+                    if block_idx == piecelist.blocks_per_piece - 1:
+                        block_length = piecelist.piece_length - (block_length * (piecelist.blocks_per_piece - 1))
+                    
+                    if piece_idx == piecelist.num_pieces - 1:
+                        if block_idx == piecelist.last_piece_num_blocks - 1:
+                            block_length = piecelist.last_block_length
+                            
+                    try:
+                        send_message_tcp(construct_request_msg(piece_idx, block_idx * piecelist.block_length, block_length), bee.sock)
+                        piecelist.request(piece_idx, block_idx, bee)
+                        bee.num_pending_requests_sent += 1
+                    except SocketDisconnected as e:
+                        # remove bee if there's a problem
+                        sel.unregister(bee.sock)
+                        swarm.remove(bee)
+                        dead_swarm.append(bee)
+                        num_bees -= 1
+
+
+        # iterate through a copy of swarm so we aren't potentially
+        # removing elements from the same list we are iterating through
+        for bee in list(swarm): 
+            if (bee.get_time_elapsed() > 120): # 2 minutes since last message
+                sel.unregister(bee.sock)
+                swarm.remove(bee)
+                dead_swarm.append(bee)
+                num_bees -= 1
+        
+        # first, check the bees that have pieces we're interested in
+        for bee in list(swarm):
+            try:
+                if piecelist.check_interest(bee.bitfield):
+                    if not bee.me_interested:
+                        send_message_tcp(interested_msg, bee.sock)
+                        bee.me_interested = True
+                else:
+                    if bee.me_interested:
+                        send_message_tcp(not_interested_msg, bee.sock)
+                        bee.me_interested = False
+            except SocketDisconnected as e:
+                log_error(Exception("Exception when sending interested message to " + bee.to_string() + ": " + str(e)))
+                swarm.remove(bee)
+                sel.unregister(bee.sock)
+                dead_swarm.append(bee)
+                vlog("Error sending interested message to " + bee.to_string())
+
+        curr_time = time.monotonic()
+
+        if curr_time - keep_alive_clock >= 30:
+            
+            for bee in list(swarm):
+                try:
+                    send_message_tcp(keep_alive_msg, bee.sock)
+                except SocketDisconnected as e:
+                    sel.unregister(bee.sock)
+                    swarm.remove(bee)
+                    dead_swarm.append(bee)
+                    num_bees -= 1
+
+            keep_alive_clock = time.monotonic()
+
+        if (curr_time - auction_clock >= 10):
+            # Choke everyone to start
+            for bee in swarm:
+                if not(optimistic_peer != None and bee.sock.fileno() == optimistic_peer.sock.fileno()):
+                    try:
+                        send_message_tcp(choke_msg, bee.sock)
+                        bee.peer_choked = 1
+                    except:
+                        continue
+
+            # recalculate top 4 interested uploaders 
+            scoreboard = []
+            for bee in swarm:
+                scoreboard.append((bee, bee.blocks_uploaded))
+            
+            scoreboard.sort(key=itemgetter(1), reverse=True)
+
+            i = 0
+            while i < 4 and i < len(scoreboard):
+                try:
+                    send_message_tcp(unchoke_msg, (scoreboard[i])[0].sock)
+                    (scoreboard[i])[0].peer_choked = 0
+                    lst = piecelist.get_pieces_peer_needs((scoreboard[i])[0])
+                    for ind in lst:
+                        send_message_tcp(construct_have_msg(ind), (scoreboard[i])[0].sock)
+
+                    i += 1
+
+                except Exception as e:
+                    i += 1
+                    continue
+                #print(scoreboard[i][1])
+
+            auction_clock = time.monotonic() # reset clock
+
+        if (curr_time - charity_clock >= 30):
+            # optimistically unchoke a new person 
+            unchoke_peer = random.choice(swarm)
+            # Check if peer is already unchoked
+            try:
+                send_message_tcp(unchoke_msg, unchoke_peer.sock)
+                unchoke_peer.peer_choked = 0
+                optimistic_peer = unchoke_peer
+                lst = piecelist.get_pieces_peer_needs(unchoke_peer)
+                for ind in lst:
+                    send_message_tcp(construct_have_msg(ind), unchoke_peer.sock)
+                charity_clock = time.monotonic() # reset clock
+                #t0 = time.time()
+            except Exception as e:
+                charity_clock = time.monotonic()
+                pass
+            for corpse in list(dead_swarm):
+                corpse.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                corpse.sock.settimeout(.5)
+                
+                try:
+                    corpse.sock.connect(corpse.addr) 
+                    # do handshake
+                    # close socket if handshake failed
+                except Exception as e: 
+                    vlog("Could not connect to peer " + str(corpse.addr) + " (" + (str(e)) + ")\n")
+                    log_error(Exception("Could not connect to peer " + str(corpse.addr) + " (" + (str(e)) + ")"))
+                    corpse.sock.close()
+                else: 
+                    # recommended to set non blocking for use with selectors, so in case of edge cases the program won't hang
+                    # kept the socket blocking durring connect() so that we know if connect failures are from 
+                    # server not responding (timeout) or server actively rejecting us
+                    try:
+                        send_handshake(corpse.sock, info_hash, myid)
+                        recv_handshake(corpse.sock)
+                        #print(info_hash)
+                        vlog("Sucesfully connected to peer " + str(corpse.addr) + "\n")
+                        corpse.sock.setblocking(False) 
+                        sel.register(corpse.sock, selectors.EVENT_READ)
+                        swarm.append(corpse)
+                        dead_swarm.remove(corpse)
+                        num_bees += 1
+                    except Exception as e:
+                        vlog("Failed to handshake with peer " + str(corpse.addr) + "\n")
+                        log_error(Exception("Failed handshake with " + str(corpse.addr) +  ": " + str(e)))
+            #print(time.time() - t0)
+        piecelist.set_timedout_requests_to_ready()
+
+        vlog("pieces resolved: " + str(piecelist.num_pieces_resolved))
+
+        if piecelist.num_pieces_resolved == piecelist.num_pieces:
+            print("Done! All pieces resolved!")
+            vlog("Time taken: " + str((time.time() - t_loop_start)))
+            done = True
+            break
+
+    if done:
+        if "files" in info_dict: 
+            output_file.seek(0, 0)
+            # mult-file 
+            for file_dict in info_dict["files"]:
+                filename = file_dict["path"][0]
+
+                if len(file_dict["path"]) > 1:
+                    for part in file_dict["path"][1:]:
+                        filename += "/"
+                        filename += part
+                
+                f = open("tor-file-outputs/" + filename, "wb")
+                f.write(output_file.read(file_dict["length"]))
+                f.close()
+            if not seeding:
+                output_file.close()
+        else: 
+            # single file
+            if not seeding:
+                output_file.close()
+            new_path = os.path.join(cwd, os.path.join("tor-file-outputs", info_dict["name"]))
+            os.rename(output_file_path, new_path)
+
+
+    if seeding:
+        while (True):
+            events = sel.select(timeout = 0) # potential issue: need to adjust timeout based on how much time left on auction/tracker/charity clocks
+                #t0 = time.time()
+            for key, mask in events: 
+                
+                # getting a connect() message from a peer
+                if (key.fd == listen_sock.fileno()): 
+                    sock, addr = listen_sock.accept()
+
+                    print("connect message received: " + str(addr))
+                
+                    curr = None
+                    
+                    for bee in swarm: 
+                        if (bee.addr == addr): # potential problem: is this the right way to check equality of tuples?
+                            vlog("Peer tried to establish duplicate connection with me")
+                            sock.close()
+                            bee.reset_clock()
+                            curr = bee
+                            break
+                        
+                    if (curr == None):
+                        vlog("Got a message from an peer that we didn't see in the tracker, attempting to handshake\n")
+                        try:
+                            recv_handshake(sock)
+                            send_handshake(sock, info_hash, myid)
+                            # delete peer and close socket if handshake failed
+                            send_message_tcp(unchoke_msg, sock)
+                            ind = 0
+                            while ind < piecelist.num_pieces:
+                                send_message_tcp(construct_have_msg(ind), sock)
+                                ind += 1
+                            sel.register(sock, selectors.EVENT_READ)
+                            sock.setblocking(False)
+                            newbie = Bee(num_pieces)
+                            if (compact):
+                                newbie.set_id(None, extract_ip(peer), extract_port(peer))
+                            else: 
+                                newbie.set_id(peer["peer id"], peer["ip"], peer["port"])
+                            newbie.sock = sock
+                            newbie.addr = addr
+                            #(newbie.sock).sock.setblocking(False) 
+                            swarm.append(newbie)
+                            newbie.peer_choked = 0
+                            num_bees += 1
+                            for bee in list(dead_swarm):
+                                if bee.addr == newbie.addr:
+                                    dead_swarm.remove(bee)
+                        except SocketDisconnected as e:
+                            log_error(Exception("Exception when handshaking with a bee that was not in the tracker: " + str(e)))
+                            vlog("Exception when handshaking with a bee that was not in the tracker: " + str(e))
+                        
+                
+                # getting a message from a peer on an already-established socket
+                else: 
+                    curr = None
+
+                    for bee in swarm: 
+                        if (key.fd == bee.sock.fileno()): # potential problem: is this the right way to check equality of tuples?
+                            bee.reset_clock()
+                            curr = bee
+                            break
+                    
+                    if (curr == None):
+                        vlog("Couldn't find peer assocated with selected socket in swarm")
+                    else: 
+                        try:
+                            msg = recv_message_tcp(curr.sock, 4)
+                            print(msg)
+                            prefix_len = int.from_bytes(msg, byteorder="big")
+                            handle_msg(prefix_len, curr)
+                            #print('here')
+                        except SocketDisconnected as e:
+                            # if we run into an error when receiving a message from the bee
+                            # then remove the bee from the swarm
+                            log_error(Exception("Exception when receiving message from " + curr.to_string() + ": " + str(e)))
+                            vlog("Error receiving a message from " + curr.to_string() + ", removing from the swarm")
+                            sel.unregister(curr.sock)
+                            swarm.remove(curr)
+                            dead_swarm.append(curr)
+                            num_bees -= 1
+
+
+
+
+if __name__=="__main__":
+    main()

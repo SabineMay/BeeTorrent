@@ -1,0 +1,5 @@
+Metadata-Version: 2.1
+Name: BeeTorrent
+Version: 0.1.0
+Summary: A CMSC417 project to do torrent-y things
+Requires-Python: >=3.12

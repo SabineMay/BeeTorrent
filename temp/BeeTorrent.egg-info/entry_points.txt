@@ -1,0 +1,2 @@
+[console_scripts]
+Dance = driver:main
