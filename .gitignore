@@ -60,4 +60,5 @@ logs/*
 temp/logs/*
 
 # demo videos
+demo/*
 temp/demo/*
