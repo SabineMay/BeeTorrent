@@ -1,9 +1,0 @@
-Commands run:
-sudo apt install python3
-Need to make python virtual environment and use that pip to install bencoder
-
-Make sure successful with:
-python3 --version
-
-Can run python files via:
-~/cmsc417-BitTorrent/v/bin/python NAME.py
