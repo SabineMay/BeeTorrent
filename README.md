@@ -1,6 +1,6 @@
 Final project for CMSC417 implementing a BitTorrent client.
 
-Project begun and finished on Github, with intermediate work done in Gitlab.
+Project begun and finished on Github, with intermediate work done in Gitlab. Demo videos may not work if you are viewing this README on Github, as the larger video files are not supported.
 
 # 0. Quick start
 ## Environment setup and takedown
