@@ -5,6 +5,13 @@
 *.log
 .DS_STORE
 
+temp/*.o
+temp/*.out
+temp/*.exe
+temp/*~
+temp/*.log
+temp/.DS_STORE
+
 # Visual Studio Code (un)code
 .vscode
 .vscode-server
@@ -16,14 +23,37 @@
 !.vscode/*.code-snippets
 .history
 
+temp/.vscode
+temp/.vscode-server
+temp/.devcontainer
+temp/!.vscode/settings.json
+temp/!.vscode/tasks.json
+temp/!.vscode/launch.json
+temp/!.vscode/extensions.json
+temp/!.vscode/*.code-snippets
+temp/.history
+
 # personal python venvs
 sabine-env/
 yasadu-env/
 patrick-venv/
 venv/
 
+temp/sabine-env/
+temp/yasadu-env/
+temp/patrick-venv/
+temp/venv/
+
 # pycache
 __pycache__/
 
-# output files
-*_bytes
+temp/__pycache__/
+
+# torrent output files
+tor-file-outputs/*
+
+temp/tor-file-outputs/*
+
+# debugging output files
+logs/*
+temp/logs/*
