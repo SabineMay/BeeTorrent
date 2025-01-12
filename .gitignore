@@ -56,4 +56,8 @@ temp/tor-file-outputs/*
 
 # debugging output files
 logs/*
+
 temp/logs/*
+
+# demo videos
+temp/demo/*
